@@ -1,0 +1,44 @@
+# Environment files
+.env
+.env.local
+
+# Dependencies
+node_modules/
+package-lock.json
+yarn.lock
+
+# Build outputs
+/frontend/.next/
+/frontend/out/
+/frontend/build/
+dist/
+
+# Backend binary
+/backend/backend
+/backend/*.exe
+
+# Temporary files
+/tmp/
+*.tmp
+temp_*.cpp
+bin_*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Go
+vendor/
