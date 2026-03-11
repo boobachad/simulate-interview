@@ -7,6 +7,7 @@ import (
 	"github.com/boobachad/simulate-interview/backend/config"
 	"github.com/boobachad/simulate-interview/backend/database"
 	"github.com/boobachad/simulate-interview/backend/handlers"
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 )
@@ -36,18 +37,14 @@ func main() {
 	router := gin.Default()
 
 	// CORS middleware
-	router.Use(func(c *gin.Context) {
-		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
-		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-
-		if c.Request.Method == "OPTIONS" {
-			c.AbortWithStatus(204)
-			return
-		}
-
-		c.Next()
-	})
+	c := cors.DefaultConfig()
+	c.AllowOrigins = []string{
+		"http://localhost:3000",
+		"http://simulate-interview.localhost:1355",
+	}
+	c.AllowMethods = []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}
+	c.AllowHeaders = []string{"Origin", "Content-Length", "Content-Type", "Authorization"}
+	router.Use(cors.New(c))
 
 	// API routes
 	api := router.Group("/api")
@@ -69,11 +66,7 @@ func main() {
 	}
 
 	// Health check
-	router.GET("/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{
-			"status": "ok",
-		})
-	})
+	router.GET("/health", handlers.HealthCheck)
 
 	// Get port from environment or use default
 	port := os.Getenv("PORT")

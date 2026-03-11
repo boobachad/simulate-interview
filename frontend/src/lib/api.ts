@@ -38,10 +38,11 @@ export const problemsApi = {
 };
 
 export const executionApi = {
-  execute: async (code: string, problemId: string, customCases?: any[], mode: "run" | "submit" = "run"): Promise<ExecutionResponse> => {
+  execute: async (code: string, problemId: string, language: string = "cpp", customCases?: any[], mode: "run" | "submit" = "run"): Promise<ExecutionResponse> => {
     const response = await api.post('/execute', {
       code,
       problem_id: problemId,
+      language,
       custom_cases: customCases || [],
       mode,
     });

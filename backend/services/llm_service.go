@@ -81,16 +81,7 @@ func (g *GeminiProvider) GenerateProblem(focus_areas []string) (*models.ProblemG
 	model := client.GenerativeModel(g.model)
 	model.SetTemperature(0.9)
 
-	// Fetch focus area guidance from DB
-	guidance := ""
-	if len(focus_areas) > 0 {
-		var fa models.FocusArea
-		result := database.DB.Where("slug = ?", utils.Slugify(focus_areas[0])).First(&fa)
-		if result.Error == nil && fa.PromptGuidance != "" {
-			guidance = fa.PromptGuidance
-		}
-	}
-
+	guidance := fetchFocusAreaGuidance(focus_areas)
 	prompt := buildPrompt(focus_areas, guidance)
 
 	log.Printf("Generating problem with Gemini for focus areas: %v", focus_areas)
@@ -130,16 +121,7 @@ func (g *GeminiProvider) GenerateProblemStream(ctx context.Context, focus_areas 
 	model := client.GenerativeModel(g.model)
 	model.SetTemperature(0.9)
 
-	// Fetch focus area guidance from DB
-	guidance := ""
-	if len(focus_areas) > 0 {
-		var fa models.FocusArea
-		result := database.DB.Where("slug = ?", utils.Slugify(focus_areas[0])).First(&fa)
-		if result.Error == nil && fa.PromptGuidance != "" {
-			guidance = fa.PromptGuidance
-		}
-	}
-
+	guidance := fetchFocusAreaGuidance(focus_areas)
 	prompt := buildPrompt(focus_areas, guidance)
 
 	log.Printf("Streaming problem generation with Gemini for focus areas: %v", focus_areas)
@@ -166,16 +148,7 @@ func (g *GeminiProvider) GenerateProblemStream(ctx context.Context, focus_areas 
 
 // GenerateProblem generates a coding problem using OpenRouter API
 func (o *OpenRouterProvider) GenerateProblem(focus_areas []string) (*models.ProblemGenerationResponse, error) {
-	// Fetch focus area guidance from DB
-	guidance := ""
-	if len(focus_areas) > 0 {
-		var fa models.FocusArea
-		result := database.DB.Where("slug = ?", utils.Slugify(focus_areas[0])).First(&fa)
-		if result.Error == nil && fa.PromptGuidance != "" {
-			guidance = fa.PromptGuidance
-		}
-	}
-
+	guidance := fetchFocusAreaGuidance(focus_areas)
 	prompt := buildPrompt(focus_areas, guidance)
 
 	log.Printf("Generating problem with OpenRouter for focus areas: %v", focus_areas)
@@ -256,16 +229,7 @@ func (o *OpenRouterProvider) GenerateProblem(focus_areas []string) (*models.Prob
 
 // GenerateProblemStream generates a coding problem using OpenRouter API with streaming
 func (o *OpenRouterProvider) GenerateProblemStream(ctx context.Context, focus_areas []string, stream_chan chan string) error {
-	// Fetch focus area guidance from DB
-	guidance := ""
-	if len(focus_areas) > 0 {
-		var fa models.FocusArea
-		result := database.DB.Where("slug = ?", utils.Slugify(focus_areas[0])).First(&fa)
-		if result.Error == nil && fa.PromptGuidance != "" {
-			guidance = fa.PromptGuidance
-		}
-	}
-
+	guidance := fetchFocusAreaGuidance(focus_areas)
 	prompt := buildPrompt(focus_areas, guidance)
 
 	log.Printf("Streaming problem generation with OpenRouter for focus areas: %v", focus_areas)
@@ -362,20 +326,40 @@ func buildPrompt(focus_areas []string, guidance string) string {
 	// Use provided guidance if available
 	focus_requirements := ""
 	if guidance != "" {
-		focus_requirements = fmt.Sprintf(`
+		if len(focus_areas) > 1 {
+			focus_requirements = fmt.Sprintf(`
+
+FOCUS AREA REQUIREMENTS:
+The problem you generate MUST combine ALL of the following focus areas:
+%s
+
+IMPORTANT: The problem should require knowledge and techniques from ALL the focus areas listed above. It should not be solvable by using only one of these topics.`, guidance)
+		} else {
+			focus_requirements = fmt.Sprintf(`
 
 FOCUS AREA REQUIREMENTS:
 The problem you generate MUST satisfy the focus area requirements below:
 %s`, guidance)
+		}
 	} else if len(focus_areas) > 0 {
 		// Fallback generic guidance
-		focus_requirements = fmt.Sprintf(`
+		if len(focus_areas) > 1 {
+			focus_requirements = fmt.Sprintf(`
+
+FOCUS AREA REQUIREMENTS:
+The problem you generate MUST combine ALL of the following topics: %s
+- The problem must fundamentally require knowledge of ALL these specific topics to solve efficiently.
+- Do NOT generate a problem that can be solved using only one of these topics.
+- The solution should naturally integrate concepts from all focus areas.`, focus_str)
+		} else {
+			focus_requirements = fmt.Sprintf(`
 
 FOCUS AREA REQUIREMENTS:
 The problem you generate MUST satisfy the focus area requirements below:
 - Primary Topic: %s
-- The problem must fundamentally require knowledge of these specific topics to solve efficienty.
+- The problem must fundamentally require knowledge of this specific topic to solve efficiently.
 - Do NOT generate a generic array/string problem unless that is the explicit focus.`, focus_str)
+		}
 	}
 
 	return fmt.Sprintf(`Generate a competitive programming problem.
@@ -416,7 +400,29 @@ You must respond with ONLY valid JSON in the following exact format (no markdown
 - Use proper input/output format that can be read from stdin and written to stdout
 - Make the problem challenging but solvable in 10-15 minutes
 - Include clear constraints in the description
-- **CRITICAL**: Append a '## Solution Hints' section at the very end of the 'description'. Checkpoints or algorithmic hints to help a stuck user, but DO NOT give the full code.`, focus_requirements, focus_areas[0])
+- **CRITICAL**: Append a '## Solution Hints' section at the very end of the 'description'. Checkpoints or algorithmic hints to help a stuck user, but DO NOT give the full code.`, focus_requirements, focus_str)
+}
+
+// fetchFocusAreaGuidance fetches and combines guidance for multiple focus areas
+func fetchFocusAreaGuidance(focus_areas []string) string {
+	if len(focus_areas) == 0 {
+		return ""
+	}
+
+	var guidances []string
+	for _, area := range focus_areas {
+		var fa models.FocusArea
+		result := database.DB.Where("slug = ?", utils.Slugify(area)).First(&fa)
+		if result.Error == nil && fa.PromptGuidance != "" {
+			guidances = append(guidances, fmt.Sprintf("**%s:**\n%s", fa.Name, fa.PromptGuidance))
+		}
+	}
+
+	if len(guidances) > 0 {
+		return strings.Join(guidances, "\n\n")
+	}
+
+	return ""
 }
 
 // MockProvider provides a mock problem when API keys are not configured

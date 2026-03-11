@@ -1,22 +1,29 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { PlusIcon, XIcon } from "lucide-react";
+import { PlusIcon, XIcon, AlertTriangleIcon } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { TestCase, ExecutionResult } from "@/lib/store";
+import { cn } from "@/lib/utils";
 
 interface TestCasesViewProps {
     testCases: TestCase[];
     results: ExecutionResult[] | null;
     customTestCases: { id: string; input: string }[];
     setCustomTestCases: (cases: { id: string; input: string }[]) => void;
+    error?: string | null;
 }
 
-export function TestCasesView({ testCases, results, customTestCases, setCustomTestCases }: TestCasesViewProps) {
+export function TestCasesView({ testCases, results, customTestCases, setCustomTestCases, error }: TestCasesViewProps) {
     const [activeTab, setActiveTab] = useState("case0");
+
+    // Ensure we switch tab if active one is deleted or invalid
+    useEffect(() => {
+        // Logic to validate activeTab could go here, but simple fallback on delete is usually enough
+    }, [customTestCases]);
 
     const handleAddTestCase = () => {
         const newId = `custom${Date.now()}`;
@@ -24,10 +31,10 @@ export function TestCasesView({ testCases, results, customTestCases, setCustomTe
         setActiveTab(newId);
     };
 
-    const handleRemoveTestCase = (id: string, e: React.MouseEvent) => {
-        e.stopPropagation();
+    const handleRemoveTestCase = (id: string) => {
         const newCases = customTestCases.filter(c => c.id !== id);
         setCustomTestCases(newCases);
+
         if (activeTab === id) {
             setActiveTab("case0");
         }
@@ -36,6 +43,24 @@ export function TestCasesView({ testCases, results, customTestCases, setCustomTe
     const updateCustomInput = (id: string, input: string) => {
         setCustomTestCases(customTestCases.map(c => c.id === id ? { ...c, input } : c));
     };
+
+    if (error) {
+        return (
+            <div className="h-full flex flex-col bg-background">
+                <div className="border-b px-4 h-9 flex items-center bg-muted/20">
+                    <div className="flex items-center gap-2 text-red-500 font-medium text-sm">
+                        <AlertTriangleIcon className="w-4 h-4" />
+                        Execution Error
+                    </div>
+                </div>
+                <div className="flex-1 p-4 overflow-auto">
+                    <div className="rounded-md border border-red-500/20 bg-red-500/10 p-4 font-mono text-sm whitespace-pre-wrap text-red-700 dark:text-red-400">
+                        {error}
+                    </div>
+                </div>
+            </div>
+        );
+    }
 
     if ((!testCases || testCases.length === 0) && customTestCases.length === 0) {
         return (
@@ -63,39 +88,59 @@ export function TestCasesView({ testCases, results, customTestCases, setCustomTe
                                 <TabsTrigger
                                     key={`std-${index}`}
                                     value={`case${index}`}
-                                    className={`rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 pb-2 pt-2 text-sm ${statusColor} data-[state=active]:text-foreground shadow-none whitespace-nowrap`}
+                                    className={cn(
+                                        "rounded-none border-b-2 border-transparent px-4 pb-2 pt-2 text-sm shadow-none whitespace-nowrap transition-colors",
+                                        "data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-foreground",
+                                        statusColor
+                                    )}
                                 >
                                     Case {index + 1}
                                     {result && (
-                                        <span className={`ml-2 w-2 h-2 rounded-full ${result.passed ? 'bg-green-500' : 'bg-red-500'}`} />
+                                        <span className={cn("ml-2 w-2 h-2 rounded-full", result.passed ? 'bg-green-500' : 'bg-red-500')} />
                                     )}
                                 </TabsTrigger>
                             );
                         })}
 
-                        {customTestCases.map((customCase, index) => {
-                            const resultIndex = testCases.length + index + 1;
-                            const result = results ? results.find(r => r.case_number === resultIndex) : null;
-                            const statusColor = result
-                                ? (result.passed ? "text-green-600" : "text-red-600")
-                                : "text-muted-foreground";
-
-                            return (
-                                <TabsTrigger
-                                    key={customCase.id}
-                                    value={customCase.id}
-                                    className={`rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-3 pb-2 pt-2 text-sm ${statusColor} data-[state=active]:text-foreground shadow-none group whitespace-nowrap`}
+                        {customTestCases.map((customCase, index) => (
+                            <TabsTrigger
+                                key={customCase.id}
+                                value={customCase.id}
+                                className={cn(
+                                    "rounded-none border-b-2 border-transparent px-3 pb-2 pt-2 text-sm text-muted-foreground shadow-none group whitespace-nowrap transition-colors",
+                                    "data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-foreground"
+                                )}
+                            >
+                                Custom {index + 1}
+                                <div
+                                    role="button"
+                                    className="ml-2 opacity-0 group-hover:opacity-100 hover:text-destructive cursor-pointer transition-opacity flex items-center justify-center p-0.5 rounded-sm hover:bg-muted/80 pointer-events-auto"
+                                    onClick={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        handleRemoveTestCase(customCase.id);
+                                    }}
+                                    onPointerDown={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                    }}
+                                    onMouseDown={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                    }}
                                 >
-                                    Custom {index + 1}
-                                    <XIcon
-                                        className="ml-2 h-3 w-3 opacity-0 group-hover:opacity-100 hover:text-destructive cursor-pointer transition-opacity"
-                                        onClick={(e) => handleRemoveTestCase(customCase.id, e)}
-                                    />
-                                </TabsTrigger>
-                            );
-                        })}
+                                    <XIcon className="h-3 w-3" />
+                                </div>
+                            </TabsTrigger>
+                        ))}
 
-                        <Button variant="ghost" size="icon" className="h-6 w-6 ml-1 rounded-sm hover:bg-muted" onClick={handleAddTestCase} title="Add Custom Test Case">
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 ml-1 rounded-sm hover:bg-muted"
+                            onClick={handleAddTestCase}
+                            title="Add Custom Test Case"
+                        >
                             <PlusIcon className="h-3 w-3" />
                         </Button>
                     </TabsList>
@@ -108,7 +153,6 @@ export function TestCasesView({ testCases, results, customTestCases, setCustomTe
 
                         return (
                             <TabsContent key={`std-content-${index}`} value={`case${index}`} className="flex-1 p-4 space-y-4 m-0 h-full">
-                                {/* Input Block */}
                                 <div className="space-y-1">
                                     <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Input</div>
                                     <div className="rounded-md border bg-muted/30 p-3 font-mono text-sm whitespace-pre-wrap">
@@ -116,7 +160,6 @@ export function TestCasesView({ testCases, results, customTestCases, setCustomTe
                                     </div>
                                 </div>
 
-                                {/* Expected Output Block */}
                                 <div className="space-y-1">
                                     <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Expected Output</div>
                                     <div className="rounded-md border bg-muted/30 p-3 font-mono text-sm whitespace-pre-wrap">
@@ -124,7 +167,6 @@ export function TestCasesView({ testCases, results, customTestCases, setCustomTe
                                     </div>
                                 </div>
 
-                                {/* Actual Output Block (Only if executed) */}
                                 {result && (
                                     <div className="space-y-1">
                                         <div className="flex items-center gap-2">
@@ -133,8 +175,10 @@ export function TestCasesView({ testCases, results, customTestCases, setCustomTe
                                                 {result.passed ? "Accepted" : "Wrong Answer"}
                                             </Badge>
                                         </div>
-                                        <div className={`rounded-md border p-4 font-mono text-sm whitespace-pre-wrap ${result.passed ? "bg-green-500/10 border-green-500/20" : "bg-red-500/10 border-red-500/20"
-                                            }`}>
+                                        <div className={cn(
+                                            "rounded-md border p-4 font-mono text-sm whitespace-pre-wrap",
+                                            result.passed ? "bg-green-500/10 border-green-500/20" : "bg-red-500/10 border-red-500/20"
+                                        )}>
                                             {result.actual_output || result.error || "No output"}
                                         </div>
                                     </div>
@@ -143,7 +187,7 @@ export function TestCasesView({ testCases, results, customTestCases, setCustomTe
                         );
                     })}
 
-                    {/* Custom Cases Content - 2 COLUMNS (Input | Output) */}
+                    {/* Custom Cases Content */}
                     {customTestCases.map((customCase, index) => {
                         const resultIndex = testCases.length + index + 1;
                         const result = results ? results.find(r => r.case_number === resultIndex) : null;
@@ -151,7 +195,6 @@ export function TestCasesView({ testCases, results, customTestCases, setCustomTe
                         return (
                             <TabsContent key={customCase.id} value={customCase.id} className="flex-1 p-4 m-0 h-full overflow-hidden">
                                 <div className="grid grid-cols-2 gap-4 h-full">
-                                    {/* Left: Input */}
                                     <div className="space-y-2 flex flex-col h-full">
                                         <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Custom Input</div>
                                         <Textarea
@@ -162,20 +205,14 @@ export function TestCasesView({ testCases, results, customTestCases, setCustomTe
                                         />
                                     </div>
 
-                                    {/* Right: Output */}
                                     <div className="space-y-2 flex flex-col h-full">
                                         <div className="flex items-center gap-2">
                                             <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Output</div>
-                                            {result && (
-                                                <Badge variant={result.passed ? "default" : "destructive"} className="text-[10px] h-5 px-1.5">
-                                                    {result.passed ? "Success" : "Error"}
-                                                </Badge>
-                                            )}
                                         </div>
-                                        <div className={`rounded-md border flex-1 p-3 font-mono text-sm whitespace-pre-wrap overflow-auto ${result
-                                                ? (result.passed ? "bg-green-500/10 border-green-500/20" : "bg-red-500/10 border-red-500/20")
-                                                : "bg-muted/30 text-muted-foreground"
-                                            }`}>
+                                        <div className={cn(
+                                            "rounded-md border flex-1 p-3 font-mono text-sm whitespace-pre-wrap overflow-auto",
+                                            result ? "bg-muted/10 border-border" : "bg-muted/30 text-muted-foreground"
+                                        )}>
                                             {result ? (
                                                 result.actual_output || result.error || "No output"
                                             ) : (

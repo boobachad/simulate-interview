@@ -89,6 +89,7 @@ type ProblemGenerationResponse struct {
 type ExecutionRequest struct {
 	Code        string     `json:"code" binding:"required"`
 	ProblemID   string     `json:"problem_id" binding:"required"`
+	Language    string     `json:"language"` // "cpp", "python", "java", "javascript"
 	CustomCases []TestCase `json:"custom_cases"`
 	Mode        string     `json:"mode"` // "run" or "submit"
 }

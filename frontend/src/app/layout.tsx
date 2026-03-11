@@ -17,7 +17,8 @@ export const metadata: Metadata = {
 };
 
 import { Toaster } from "@/components/ui/sonner";
-import { ThemeProvider } from "@/components/theme-provider";
+import { ThemeProvider } from "@/components/Themeprovider";
+import { AppFooter } from "@/components/layout/app-footer";
 
 export default function RootLayout({
   children,
@@ -35,7 +36,12 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          {children}
+          <div className="flex flex-col min-h-screen">
+            <main className="flex-1">
+              {children}
+            </main>
+            <AppFooter />
+          </div>
           <Toaster />
         </ThemeProvider>
       </body>

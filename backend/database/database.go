@@ -13,6 +13,11 @@ import (
 
 var DB *gorm.DB
 
+// GetDB returns the database instance
+func GetDB() *gorm.DB {
+	return DB
+}
+
 // Connect establishes database connection
 func Connect() error {
 	database_url := os.Getenv("DATABASE_URL")

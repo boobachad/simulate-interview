@@ -61,8 +61,14 @@ func ExecuteCode(c *gin.Context) {
 	// Create execution service
 	exec_service := services.NewExecutionService()
 
+	// Default to C++ if no language specified
+	language := request.Language
+	if language == "" {
+		language = "cpp"
+	}
+
 	// Validate code
-	if err := exec_service.ValidateCode(request.Code); err != nil {
+	if err := exec_service.ValidateCode(request.Code, language); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": err.Error(),
 		})
@@ -85,8 +91,8 @@ func ExecuteCode(c *gin.Context) {
 	}
 
 	// Execute code
-	log.Printf("Executing code for problem: %s", problem.Title)
-	results, err := exec_service.Execute(request.Code, all_cases)
+	log.Printf("Executing %s code for problem: %s", language, problem.Title)
+	results, err := exec_service.Execute(request.Code, all_cases, language)
 	if err != nil {
 		log.Printf("Execution error: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{

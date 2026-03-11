@@ -66,8 +66,8 @@ export function CodeEditor({
                             <SelectContent>
                                 <SelectItem value="cpp">C++</SelectItem>
                                 <SelectItem value="python">Python</SelectItem>
+                                <SelectItem value="java">Java</SelectItem>
                                 <SelectItem value="javascript">JavaScript</SelectItem>
-                                {/* Add more as needed */}
                             </SelectContent>
                         </Select>
                     ) : (

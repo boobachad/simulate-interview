@@ -20,16 +20,109 @@ const CPP_BOILERPLATE = `#include <bits/stdc++.h>
 using namespace std;
 
 void solve() {
-    // Read your input here
-    int a,b; if (cin>>a>>b) cout<<(a+b)<<endl;
+    // ============================================
+    // START: Write your solution code here
+    // ============================================
+    
+    int a, b;
+    cin >> a >> b;
+    cout << a + b << endl;
+    
+    // ============================================
+    // END: Write your solution code above
+    // ============================================
 }
 
+// DO NOT MODIFY BELOW THIS LINE
 int main() {
     ios_base::sync_with_stdio(false);
     cin.tie(NULL);
-    int t;cin>>t; while(t--) solve();
+    int t;
+    cin >> t;
+    while(t--) solve();
     return 0;
 }`;
+
+const PYTHON_BOILERPLATE = `def solve():
+    # ============================================
+    # START: Write your solution code here
+    # ============================================
+    
+    a, b = map(int, input().split())
+    print(a + b)
+    
+    # ============================================
+    # END: Write your solution code above
+    # ============================================
+
+# DO NOT MODIFY BELOW THIS LINE
+if __name__ == "__main__":
+    t = int(input())
+    for _ in range(t):
+        solve()`;
+
+const JAVA_BOILERPLATE = `import java.util.*;
+import java.io.*;
+
+public class Main {
+    public static void solve(Scanner sc) {
+        // ============================================
+        // START: Write your solution code here
+        // ============================================
+        
+        int a = sc.nextInt();
+        int b = sc.nextInt();
+        System.out.println(a + b);
+        
+        // ============================================
+        // END: Write your solution code above
+        // ============================================
+    }
+    
+    // DO NOT MODIFY BELOW THIS LINE
+    public static void main(String[] args) {
+        Scanner sc = new Scanner(System.in);
+        int t = sc.nextInt();
+        while (t-- > 0) {
+            solve(sc);
+        }
+        sc.close();
+    }
+}`;
+
+const JAVASCRIPT_BOILERPLATE = `const readline = require('readline');
+const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+});
+
+let lines = [];
+rl.on('line', (line) => {
+    lines.push(line);
+}).on('close', () => {
+    const t = parseInt(lines[0]);
+    let idx = 1;
+    
+    for (let i = 0; i < t; i++) {
+        // ============================================
+        // START: Write your solution code here
+        // ============================================
+        
+        const [a, b] = lines[idx++].split(' ').map(Number);
+        console.log(a + b);
+        
+        // ============================================
+        // END: Write your solution code above
+        // ============================================
+    }
+});`;
+
+const BOILERPLATES: Record<string, string> = {
+    cpp: CPP_BOILERPLATE,
+    python: PYTHON_BOILERPLATE,
+    java: JAVA_BOILERPLATE,
+    javascript: JAVASCRIPT_BOILERPLATE,
+};
 
 export default function ProblemPage() {
   const params = useParams();
@@ -38,7 +131,7 @@ export default function ProblemPage() {
   const { currentProblem, setCurrentProblem } = useInterviewStore();
 
   const [language, setLanguage] = useState("cpp");
-  const [code, setCode] = useState(CPP_BOILERPLATE);
+  const [code, setCode] = useState(BOILERPLATES.cpp);
   const [isRunning, setIsRunning] = useState(false);
 
   // Custom Test Cases State lifted from TestCasesView
@@ -46,12 +139,22 @@ export default function ProblemPage() {
 
   // Store execution results
   const [executionResults, setExecutionResults] = useState<any[] | null>(null);
+  const [executionError, setExecutionError] = useState<string | null>(null);
+
+  // Update code when language changes
+  useEffect(() => {
+    setCode(BOILERPLATES[language] || BOILERPLATES.cpp);
+  }, [language]);
 
   useEffect(() => {
     if (!currentProblem || currentProblem.id !== problemId) {
       loadProblem();
     }
   }, [problemId]);
+
+  useEffect(() => {
+    setExecutionResults(null);
+  }, [customTestCases]);
 
   const loadProblem = async () => {
     try {
@@ -73,6 +176,7 @@ export default function ProblemPage() {
   const executeCode = async (mode: "run" | "submit") => {
     setIsRunning(true);
     setExecutionResults(null);
+    setExecutionError(null);
 
     try {
       // Format custom cases for the API
@@ -81,7 +185,7 @@ export default function ProblemPage() {
         expected_output: "",
       }));
 
-      const response = await executionApi.execute(code, problemId, formattedCustomCases, mode);
+      const response = await executionApi.execute(code, problemId, language, formattedCustomCases, mode);
 
       if (response.success || response.results) {
         setExecutionResults(response.results);
@@ -105,11 +209,12 @@ export default function ProblemPage() {
           }
         }
       } else {
-        toast.error("Execution failed to return results");
+        setExecutionError("Execution failed to return results. Please check your code.");
       }
 
     } catch (error: any) {
-      toast.error(error.response?.data?.error || "Execution failed");
+      const msg = error.response?.data?.error || "Execution failed";
+      setExecutionError(msg);
     } finally {
       setIsRunning(false);
     }
@@ -273,6 +378,7 @@ export default function ProblemPage() {
       results={executionResults}
       customTestCases={customTestCases}
       setCustomTestCases={setCustomTestCases}
+      error={executionError}
     />
   );
 
