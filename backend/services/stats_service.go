@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/boobachad/simulate-interview/backend/models"
@@ -203,7 +204,7 @@ func (s *statsService) GetStats(ctx context.Context, userID uuid.UUID) (*Combine
 }
 
 // BuildPersonalizationContext creates context string for AI prompts
-func (s *statsService) BuildPersonalizationContext(ctx context.Context, userID uuid.UUID, focusMode string, focusTopic string) (string, error) {
+func (s *statsService) BuildPersonalizationContext(ctx context.Context, userID uuid.UUID, focusMode string, focusTopic string, focusTopics []string) (string, error) {
 	stats, err := s.GetStats(ctx, userID)
 	if err != nil {
 		return "", fmt.Errorf("get stats: %w", err)
@@ -220,7 +221,6 @@ func (s *statsService) BuildPersonalizationContext(ctx context.Context, userID u
 			stats.LeetCode.HardSolved,
 		))
 
-		// Add top skills
 		if len(stats.LeetCode.Skills) > 0 {
 			contextParts = append(contextParts, "Top LeetCode skills:")
 			count := 0
@@ -243,7 +243,6 @@ func (s *statsService) BuildPersonalizationContext(ctx context.Context, userID u
 			stats.Codeforces.ContestCount,
 		))
 
-		// Add top tags
 		if len(stats.Codeforces.Tags) > 0 {
 			contextParts = append(contextParts, "Top Codeforces tags:")
 			count := 0
@@ -257,9 +256,10 @@ func (s *statsService) BuildPersonalizationContext(ctx context.Context, userID u
 		}
 	}
 
-	// Add focus mode context
 	if focusMode == "single" && focusTopic != "" {
 		contextParts = append(contextParts, fmt.Sprintf("\nFocus: Generate problem specifically for topic '%s'", focusTopic))
+	} else if focusMode == "multiple" && len(focusTopics) > 0 {
+		contextParts = append(contextParts, fmt.Sprintf("\nFocus: Selected topics: %s", strings.Join(focusTopics, ", ")))
 	} else {
 		contextParts = append(contextParts, "\nFocus: Generate problem targeting user's weak areas")
 	}

@@ -25,11 +25,11 @@ type ProfileService interface {
 type StatsService interface {
 	SyncStats(ctx context.Context, userID uuid.UUID) error
 	GetStats(ctx context.Context, userID uuid.UUID) (*CombinedStats, error)
-	BuildPersonalizationContext(ctx context.Context, userID uuid.UUID, focusMode string, focusTopic string) (string, error)
+	BuildPersonalizationContext(ctx context.Context, userID uuid.UUID, focusMode string, focusTopic string, focusTopics []string) (string, error)
 }
 
 type SessionService interface {
-	CreateSession(ctx context.Context, userID uuid.UUID, problemCount int, focusMode, focusTopic string) (*SessionData, *models.ProblemGenerationResponse, error)
+	CreateSession(ctx context.Context, userID uuid.UUID, problemCount int, focusMode, focusTopic string, focusTopics []string) (*SessionData, *models.ProblemGenerationResponse, error)
 	GetSession(ctx context.Context, sessionID uuid.UUID) (*SessionData, error)
 	GetNextProblem(ctx context.Context, sessionID uuid.UUID, currentNumber int) (*models.ProblemGenerationResponse, error)
 	IsNextProblemReady(ctx context.Context, sessionID uuid.UUID, currentNumber int) (bool, error)

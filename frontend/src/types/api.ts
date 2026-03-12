@@ -69,13 +69,20 @@ export interface FocusArea {
 // Focus Selection
 export type FocusSelection =
   | { mode: "all" }
-  | { mode: "single"; topic: string };
+  | { mode: "single"; topic: string }
+  | { mode: "multiple"; topics: string[] };
 
 // Type guard for focus selection
 export function isSingleTopicMode(
   selection: FocusSelection
 ): selection is { mode: "single"; topic: string } {
   return selection.mode === "single";
+}
+
+export function isMultipleTopicsMode(
+  selection: FocusSelection
+): selection is { mode: "multiple"; topics: string[] } {
+  return selection.mode === "multiple";
 }
 
 // Test Case
@@ -104,6 +111,11 @@ export type SessionCreateRequest =
   | {
       focus_mode: "single";
       focus_topic: string;
+      problem_count: number;
+    }
+  | {
+      focus_mode: "multiple";
+      focus_topics: string[];
       problem_count: number;
     };
 
@@ -148,8 +160,9 @@ export function getStatusMessage(status: SessionProblemStatus): string {
 export interface SessionData {
   id: SessionID;
   problem_count: number;
-  focus_mode: "all" | "single";
+  focus_mode: "all" | "single" | "multiple";
   focus_topic: string | null;
+  focus_topics: string[] | null;
   current_problem_number: number;
   status: "active" | "completed";
   problems: SessionProblem[];

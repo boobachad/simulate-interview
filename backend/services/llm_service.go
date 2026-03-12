@@ -333,10 +333,11 @@ USER PERFORMANCE CONTEXT:
 Use this context to tailor the problem difficulty and focus on areas where the user needs improvement.`, personalizationContext)
 	}
 
-	// Use provided guidance if available
+	// Build focus requirements based on number of focus areas
 	focusRequirements := ""
 	if guidance != "" {
 		if len(focusAreas) > 1 {
+			// Multiple topics with guidance - combine strategy
 			focusRequirements = fmt.Sprintf(`
 
 FOCUS AREA REQUIREMENTS:
@@ -345,6 +346,7 @@ The problem you generate MUST combine ALL of the following focus areas:
 
 IMPORTANT: The problem should require knowledge and techniques from ALL the focus areas listed above. It should not be solvable by using only one of these topics.`, guidance)
 		} else {
+			// Single topic with guidance
 			focusRequirements = fmt.Sprintf(`
 
 FOCUS AREA REQUIREMENTS:
@@ -354,6 +356,7 @@ The problem you generate MUST satisfy the focus area requirements below:
 	} else if len(focusAreas) > 0 {
 		// Fallback generic guidance
 		if len(focusAreas) > 1 {
+			// Multiple topics without guidance - combine strategy
 			focusRequirements = fmt.Sprintf(`
 
 FOCUS AREA REQUIREMENTS:
@@ -362,6 +365,7 @@ The problem you generate MUST combine ALL of the following topics: %s
 - Do NOT generate a problem that can be solved using only one of these topics.
 - The solution should naturally integrate concepts from all focus areas.`, focusStr)
 		} else {
+			// Single topic without guidance
 			focusRequirements = fmt.Sprintf(`
 
 FOCUS AREA REQUIREMENTS:
@@ -402,7 +406,7 @@ You must respond with ONLY valid JSON in the following exact format (no markdown
   ]
 }
 
-- Must be solvable in C++
+- Must be solvable in C++, Python, Java, and JavaScript
 - Provide exactly 2 sample cases in the 'sample_cases' array.
 - ALSO INCLUDE THESE SAME 2 SAMPLE CASES IN THE 'description' FIELD using the format specified above (## Example 1, ## Example 2).
 - Provide exactly 5 hidden test cases in the 'hidden_cases' array.

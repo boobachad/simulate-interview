@@ -7,6 +7,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/boobachad/simulate-interview/backend/config"
 	"github.com/boobachad/simulate-interview/backend/models"
 	"github.com/boobachad/simulate-interview/backend/utils"
 	"github.com/google/uuid"
@@ -30,17 +31,19 @@ func NewGenerationService(db *gorm.DB, llmProvider LLMProvider, statsService *st
 	}
 }
 
+// getStrategy returns the configured problem generation strategy
+func (s *generationService) getStrategy() string {
+	return config.Config.ProblemGenerationStrategy
+}
+
 // GenerateFirstProblem generates the first problem synchronously
-func (s *generationService) GenerateFirstProblem(ctx context.Context, sessionID uuid.UUID, contextStr string) (*models.ProblemGenerationResponse, error) {
+func (s *generationService) GenerateFirstProblem(ctx context.Context, sessionID uuid.UUID, contextStr string, strategy string) (*models.ProblemGenerationResponse, error) {
 	var session models.InterviewSession
 	if err := s.db.WithContext(ctx).Where("id = ?", sessionID).First(&session).Error; err != nil {
 		return nil, fmt.Errorf("query session: %w", err)
 	}
 
-	focusAreas := []string{}
-	if session.FocusMode == "single" && session.FocusTopic != nil {
-		focusAreas = []string{*session.FocusTopic}
-	}
+	focusAreas := s.selectFocusAreas(&session, 1, strategy)
 
 	problemResponse, err := s.llmProvider.GenerateProblem(ctx, focusAreas, contextStr)
 	if err != nil {
@@ -51,7 +54,7 @@ func (s *generationService) GenerateFirstProblem(ctx context.Context, sessionID 
 }
 
 // StartBackgroundQueue launches goroutine to generate remaining problems
-func (s *generationService) StartBackgroundQueue(ctx context.Context, sessionID uuid.UUID, problemCount int, contextStr string) {
+func (s *generationService) StartBackgroundQueue(ctx context.Context, sessionID uuid.UUID, problemCount int, contextStr string, strategy string) {
 	go func() {
 		for problemNumber := 2; problemNumber <= problemCount; problemNumber++ {
 			select {
@@ -59,7 +62,7 @@ func (s *generationService) StartBackgroundQueue(ctx context.Context, sessionID 
 				log.Printf("Background queue cancelled for session %s", sessionID)
 				return
 			default:
-				if err := s.GenerateProblemWithRetry(ctx, sessionID, problemNumber, contextStr); err != nil {
+				if err := s.GenerateProblemWithRetry(ctx, sessionID, problemNumber, contextStr, strategy); err != nil {
 					log.Printf("Failed to generate problem %d for session %s: %v", problemNumber, sessionID, err)
 					s.markProblemFailed(ctx, sessionID, problemNumber, err.Error())
 				}
@@ -70,16 +73,13 @@ func (s *generationService) StartBackgroundQueue(ctx context.Context, sessionID 
 }
 
 // GenerateProblemWithRetry generates a problem with rate limiting and retry logic
-func (s *generationService) GenerateProblemWithRetry(ctx context.Context, sessionID uuid.UUID, problemNumber int, contextStr string) error {
+func (s *generationService) GenerateProblemWithRetry(ctx context.Context, sessionID uuid.UUID, problemNumber int, contextStr string, strategy string) error {
 	var session models.InterviewSession
 	if err := s.db.WithContext(ctx).Where("id = ?", sessionID).First(&session).Error; err != nil {
 		return fmt.Errorf("query session: %w", err)
 	}
 
-	focusAreas := []string{}
-	if session.FocusMode == "single" && session.FocusTopic != nil {
-		focusAreas = []string{*session.FocusTopic}
-	}
+	focusAreas := s.selectFocusAreas(&session, problemNumber, strategy)
 
 	var problemResponse *models.ProblemGenerationResponse
 	var generateErr error
@@ -116,6 +116,43 @@ func (s *generationService) GenerateProblemWithRetry(ctx context.Context, sessio
 
 	log.Printf("Generated problem %d for session %s", problemNumber, sessionID)
 	return nil
+}
+
+// selectFocusAreas determines which topics to use based on strategy
+func (s *generationService) selectFocusAreas(session *models.InterviewSession, problemNumber int, strategy string) []string {
+	var allTopics []string
+
+	if session.FocusMode == "single" && session.FocusTopic != nil {
+		allTopics = []string{*session.FocusTopic}
+	} else if session.FocusMode == "multiple" && len(session.FocusTopics) > 0 {
+		allTopics = session.FocusTopics
+	} else {
+		return []string{}
+	}
+
+	if len(allTopics) == 0 {
+		return []string{}
+	}
+
+	if len(allTopics) == 1 {
+		return allTopics
+	}
+
+	switch strategy {
+	case "rotate":
+		index := (problemNumber - 1) % len(allTopics)
+		return []string{allTopics[index]}
+	case "combine":
+		return allTopics
+	case "mix":
+		if problemNumber%2 == 0 {
+			return allTopics
+		}
+		index := (problemNumber - 1) % len(allTopics)
+		return []string{allTopics[index]}
+	default:
+		return allTopics
+	}
 }
 
 // markProblemFailed updates session_problems status to failed

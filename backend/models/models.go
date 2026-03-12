@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 	"gorm.io/gorm"
 )
 
@@ -227,14 +228,15 @@ func (f *FocusAreaDynamic) BeforeCreate(tx *gorm.DB) error {
 
 // InterviewSession represents an interview session
 type InterviewSession struct {
-	ID                   uuid.UUID `gorm:"type:uuid;primary_key;default:gen_random_uuid()" json:"id"`
-	UserID               uuid.UUID `gorm:"type:uuid;not null" json:"user_id"`
-	ProblemCount         int       `gorm:"not null" json:"problem_count"`
-	FocusMode            string    `gorm:"type:varchar(20);not null" json:"focus_mode"`
-	FocusTopic           *string   `gorm:"type:varchar(255)" json:"focus_topic"`
-	CurrentProblemNumber int       `gorm:"default:1" json:"current_problem_number"`
-	Status               string    `gorm:"type:varchar(20);default:'active'" json:"status"`
-	CreatedAt            time.Time `json:"created_at"`
+	ID                   uuid.UUID      `gorm:"type:uuid;primary_key;default:gen_random_uuid()" json:"id"`
+	UserID               uuid.UUID      `gorm:"type:uuid;not null" json:"user_id"`
+	ProblemCount         int            `gorm:"not null" json:"problem_count"`
+	FocusMode            string         `gorm:"type:varchar(20);not null" json:"focus_mode"`
+	FocusTopic           *string        `gorm:"type:varchar(255)" json:"focus_topic"`
+	FocusTopics          pq.StringArray `gorm:"type:text[]" json:"focus_topics"`
+	CurrentProblemNumber int            `gorm:"default:1" json:"current_problem_number"`
+	Status               string         `gorm:"type:varchar(20);default:'active'" json:"status"`
+	CreatedAt            time.Time      `json:"created_at"`
 }
 
 // BeforeCreate sets UUID before creating record

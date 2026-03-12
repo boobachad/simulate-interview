@@ -5,11 +5,12 @@ import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { SearchIcon, Loader2Icon } from "lucide-react";
 import { apiClient } from "@/lib/api-client";
 import { toast } from "sonner";
 import type { FocusArea, FocusSelection } from "@/types/api";
-import { isSingleTopicMode } from "@/types/api";
+import { isSingleTopicMode, isMultipleTopicsMode } from "@/types/api";
 
 interface FocusAreaSelectorProps {
   selection: FocusSelection;
@@ -71,12 +72,53 @@ export function FocusAreaSelector({
   const handleModeChange = (value: string) => {
     if (value === "all") {
       onSelectionChange({ mode: "all" });
+    } else if (value === "single") {
+      onSelectionChange({ mode: "single", topic: "" });
+    } else if (value === "multiple") {
+      onSelectionChange({ mode: "multiple", topics: [] });
     }
   };
 
   const handleTopicSelect = (topic: string) => {
     onSelectionChange({ mode: "single", topic });
   };
+
+  const handleTopicToggle = (topic: string) => {
+    if (!isMultipleTopicsMode(selection)) return;
+
+    const isSelected = selection.topics.includes(topic);
+    
+    // Always allow removal
+    if (isSelected) {
+      const topics = selection.topics.filter((t) => t !== topic);
+      onSelectionChange({ mode: "multiple", topics });
+      return;
+    }
+    
+    // Prevent adding if already at limit
+    if (selection.topics.length >= 10) {
+      return;
+    }
+    
+    // Add topic
+    const topics = [...selection.topics, topic];
+    onSelectionChange({ mode: "multiple", topics });
+  };
+
+  const isTopicSelected = (topic: string): boolean => {
+    if (isSingleTopicMode(selection)) {
+      return selection.topic === topic;
+    }
+    if (isMultipleTopicsMode(selection)) {
+      return selection.topics.includes(topic);
+    }
+    return false;
+  };
+
+  const selectedCount = isMultipleTopicsMode(selection)
+    ? selection.topics.length
+    : 0;
+  const isMultipleValid = selectedCount >= 2 && selectedCount <= 10;
 
   return (
     <div className="space-y-4">
@@ -99,11 +141,33 @@ export function FocusAreaSelector({
               Single Topic
             </Label>
           </div>
+          <div className="flex items-center space-x-2">
+            <RadioGroupItem value="multiple" id="mode-multiple" />
+            <Label
+              htmlFor="mode-multiple"
+              className="font-normal cursor-pointer"
+            >
+              Multiple Topics
+            </Label>
+          </div>
         </RadioGroup>
       </div>
 
-      {isSingleTopicMode(selection) && (
+      {(isSingleTopicMode(selection) || isMultipleTopicsMode(selection)) && (
         <div className="space-y-3">
+          {isMultipleTopicsMode(selection) && (
+            <div className="text-sm text-muted-foreground">
+              Select 2-10 topics{" "}
+              <span
+                className={
+                  isMultipleValid ? "text-green-600" : "text-destructive"
+                }
+              >
+                ({selectedCount} selected)
+              </span>
+            </div>
+          )}
+
           <div className="relative">
             <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
@@ -122,31 +186,68 @@ export function FocusAreaSelector({
           ) : (
             <div className="space-y-2">
               <div className="max-h-[300px] overflow-y-auto space-y-1 border rounded-md p-2">
-                {paginatedAreas.map((area) => (
-                  <button
-                    key={`${area.platform}-${area.topic}`}
-                    onClick={() => handleTopicSelect(area.topic)}
-                    className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
-                      selection.topic === area.topic
-                        ? "bg-primary text-primary-foreground"
-                        : "hover:bg-accent hover:text-accent-foreground"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-medium">{area.topic}</span>
-                      <div className="flex items-center gap-2 shrink-0">
-                        {area.user_solved !== undefined && (
-                          <Badge variant="secondary" className="text-xs">
-                            {area.user_solved} solved
+                {paginatedAreas.map((area) => {
+                  const selected = isTopicSelected(area.topic);
+
+                  if (isSingleTopicMode(selection)) {
+                    return (
+                      <button
+                        key={`${area.platform}-${area.topic}`}
+                        onClick={() => handleTopicSelect(area.topic)}
+                        className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
+                          selected
+                            ? "bg-primary text-primary-foreground"
+                            : "hover:bg-accent hover:text-accent-foreground"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-medium">{area.topic}</span>
+                          <div className="flex items-center gap-2 shrink-0">
+                            {area.user_solved !== undefined && (
+                              <Badge variant="secondary" className="text-xs">
+                                {area.user_solved} solved
+                              </Badge>
+                            )}
+                            <Badge variant="outline" className="text-xs">
+                              {area.problem_count} problems
+                            </Badge>
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  }
+
+                  return (
+                    <div
+                      key={`${area.platform}-${area.topic}`}
+                      className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors ${
+                        selected ? "bg-accent" : "hover:bg-accent/50"
+                      }`}
+                    >
+                      <Checkbox
+                        id={`topic-${area.platform}-${area.topic}`}
+                        checked={selected}
+                        onCheckedChange={() => handleTopicToggle(area.topic)}
+                      />
+                      <label
+                        htmlFor={`topic-${area.platform}-${area.topic}`}
+                        className="flex-1 flex items-center justify-between gap-2 cursor-pointer"
+                      >
+                        <span className="font-medium">{area.topic}</span>
+                        <div className="flex items-center gap-2 shrink-0">
+                          {area.user_solved !== undefined && (
+                            <Badge variant="secondary" className="text-xs">
+                              {area.user_solved} solved
+                            </Badge>
+                          )}
+                          <Badge variant="outline" className="text-xs">
+                            {area.problem_count} problems
                           </Badge>
-                        )}
-                        <Badge variant="outline" className="text-xs">
-                          {area.problem_count} problems
-                        </Badge>
-                      </div>
+                        </div>
+                      </label>
                     </div>
-                  </button>
-                ))}
+                  );
+                })}
               </div>
 
               {hasMore && (

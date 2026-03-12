@@ -20,9 +20,10 @@ func NewSessionHandler(sessionService services.SessionService) *SessionHandler {
 }
 
 type CreateSessionRequest struct {
-	FocusMode    string `json:"focus_mode" binding:"required"`
-	FocusTopic   string `json:"focus_topic"`
-	ProblemCount int    `json:"problem_count" binding:"required,min=1,max=10"`
+	FocusMode    string   `json:"focus_mode" binding:"required"`
+	FocusTopic   string   `json:"focus_topic"`
+	FocusTopics  []string `json:"focus_topics"`
+	ProblemCount int      `json:"problem_count" binding:"required,min=1,max=10"`
 }
 
 type CreateSessionResponse struct {
@@ -49,14 +50,42 @@ func (h *SessionHandler) CreateSession(c *gin.Context) {
 		return
 	}
 
-	if req.FocusMode != "all" && req.FocusMode != "single" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Focus mode must be 'all' or 'single'"})
+	if req.FocusMode != "all" && req.FocusMode != "single" && req.FocusMode != "multiple" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Focus mode must be 'all', 'single', or 'multiple'"})
 		return
 	}
 
 	if req.FocusMode == "single" && req.FocusTopic == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Focus topic required for single mode"})
 		return
+	}
+
+	if req.FocusMode == "multiple" {
+		// Trim whitespace and validate topics
+		cleanedTopics := make([]string, 0, len(req.FocusTopics))
+		seen := make(map[string]bool)
+		
+		for _, topic := range req.FocusTopics {
+			trimmed := strings.TrimSpace(topic)
+			if trimmed == "" {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Empty topics not allowed"})
+				return
+			}
+			if seen[trimmed] {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Duplicate topics not allowed"})
+				return
+			}
+			seen[trimmed] = true
+			cleanedTopics = append(cleanedTopics, trimmed)
+		}
+		
+		if len(cleanedTopics) < 2 || len(cleanedTopics) > 10 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Multiple mode requires 2-10 unique topics"})
+			return
+		}
+		
+		// Use cleaned topics
+		req.FocusTopics = cleanedTopics
 	}
 
 	uid, ok := userID.(uuid.UUID)
@@ -71,6 +100,7 @@ func (h *SessionHandler) CreateSession(c *gin.Context) {
 		req.ProblemCount,
 		req.FocusMode,
 		req.FocusTopic,
+		req.FocusTopics,
 	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create session"})

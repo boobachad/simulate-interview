@@ -32,7 +32,14 @@ type SessionData struct {
 }
 
 // CreateSession creates a new interview session and generates first problem
-func (s *sessionService) CreateSession(ctx context.Context, userID uuid.UUID, problemCount int, focusMode, focusTopic string) (*SessionData, *models.ProblemGenerationResponse, error) {
+func (s *sessionService) CreateSession(ctx context.Context, userID uuid.UUID, problemCount int, focusMode, focusTopic string, focusTopics []string) (*SessionData, *models.ProblemGenerationResponse, error) {
+	// Validate focus mode and topics
+	if focusMode == "multiple" {
+		if len(focusTopics) < 2 || len(focusTopics) > 10 {
+			return nil, nil, fmt.Errorf("multiple mode requires 2-10 topics, got %d", len(focusTopics))
+		}
+	}
+
 	var focusTopicPtr *string
 	if focusTopic != "" {
 		focusTopicPtr = &focusTopic
@@ -43,6 +50,7 @@ func (s *sessionService) CreateSession(ctx context.Context, userID uuid.UUID, pr
 		ProblemCount: problemCount,
 		FocusMode:    focusMode,
 		FocusTopic:   focusTopicPtr,
+		FocusTopics:  focusTopics,
 		Status:       "active",
 	}
 
@@ -51,13 +59,16 @@ func (s *sessionService) CreateSession(ctx context.Context, userID uuid.UUID, pr
 	}
 
 	// Build personalization context
-	contextStr, err := s.statsService.BuildPersonalizationContext(ctx, userID, focusMode, focusTopic)
+	contextStr, err := s.statsService.BuildPersonalizationContext(ctx, userID, focusMode, focusTopic, focusTopics)
 	if err != nil {
 		contextStr = ""
 	}
 
+	// Get strategy from config
+	strategy := s.generationService.getStrategy()
+
 	// Generate first problem synchronously
-	firstProblem, err := s.generationService.GenerateFirstProblem(ctx, session.ID, contextStr)
+	firstProblem, err := s.generationService.GenerateFirstProblem(ctx, session.ID, contextStr, strategy)
 	if err != nil {
 		return nil, nil, fmt.Errorf("generate first problem: %w", err)
 	}
@@ -93,7 +104,11 @@ func (s *sessionService) CreateSession(ctx context.Context, userID uuid.UUID, pr
 
 	// Start background queue for remaining problems
 	if problemCount > 1 {
-		s.generationService.StartBackgroundQueue(ctx, session.ID, problemCount, contextStr)
+		// Use detached context with timeout for background generation
+		// Request context would be cancelled when HTTP request completes
+		bgCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		defer cancel()
+		s.generationService.StartBackgroundQueue(bgCtx, session.ID, problemCount, contextStr, strategy)
 	}
 
 	sessionData := &SessionData{

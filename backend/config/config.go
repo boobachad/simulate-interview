@@ -15,6 +15,7 @@ type ProviderConfig struct {
 	OpenRouter struct {
 		Model string `json:"model"`
 	} `json:"openrouter"`
+	ProblemGenerationStrategy string
 }
 
 var Config ProviderConfig
@@ -30,6 +31,26 @@ func LoadConfig() error {
 	if err != nil {
 		return fmt.Errorf("failed to parse config.json: %w", err)
 	}
+
+	// Load problem generation strategy from env, default to "mix"
+	strategy := os.Getenv("PROBLEM_GENERATION_STRATEGY")
+	if strategy == "" {
+		strategy = "mix"
+	}
+	
+	// Validate strategy against allowlist
+	validStrategies := map[string]bool{
+		"rotate":  true,
+		"combine": true,
+		"mix":     true,
+	}
+	
+	if !validStrategies[strategy] {
+		log.Printf("Invalid PROBLEM_GENERATION_STRATEGY '%s', defaulting to 'mix'", strategy)
+		strategy = "mix"
+	}
+	
+	Config.ProblemGenerationStrategy = strategy
 
 	return nil
 }
