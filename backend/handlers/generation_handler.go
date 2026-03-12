@@ -54,7 +54,7 @@ func GenerateProblem(c *gin.Context) {
 	// Generate problem with context
 	ctx := c.Request.Context()
 	log.Printf("Generating problem for focus areas: %v", request.FocusAreas)
-	problemResponse, err := llmProvider.GenerateProblem(ctx, request.FocusAreas)
+	problemResponse, err := llmProvider.GenerateProblem(ctx, request.FocusAreas, "")
 	if err != nil {
 		log.Printf("Error generating problem: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{

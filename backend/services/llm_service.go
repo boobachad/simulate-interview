@@ -466,7 +466,7 @@ func (m *MockProvider) GenerateProblemStream(ctx context.Context, focusAreas []s
 	log.Println("Using mock problem stream (API keys not configured)")
 
 	// Get the mock problem
-	problem, err := m.GenerateProblem(ctx, focusAreas)
+	problem, err := m.GenerateProblem(ctx, focusAreas, "")
 	if err != nil {
 		return err
 	}

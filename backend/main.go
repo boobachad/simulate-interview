@@ -12,6 +12,9 @@ import (
 	"github.com/boobachad/simulate-interview/backend/config"
 	"github.com/boobachad/simulate-interview/backend/database"
 	"github.com/boobachad/simulate-interview/backend/handlers"
+	"github.com/boobachad/simulate-interview/backend/middleware"
+	"github.com/boobachad/simulate-interview/backend/services"
+	"github.com/boobachad/simulate-interview/backend/utils"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
@@ -42,6 +45,30 @@ func main() {
 		log.Fatalf("Failed to run migrations: %v", err)
 	}
 
+	// Initialize services
+	db := database.GetDB()
+	httpClient := &http.Client{Timeout: 30 * time.Second}
+
+	authService := services.NewAuthService(db)
+	profileService := services.NewProfileService(db)
+	statsService := services.NewStatsService(db, httpClient)
+	rateLimiter := utils.NewRateLimiter()
+
+	llmProvider, err := services.NewLLMProvider()
+	if err != nil {
+		log.Fatalf("Failed to create LLM provider: %v", err)
+	}
+
+	generationService := services.NewGenerationService(db, llmProvider, statsService, rateLimiter)
+	sessionService := services.NewSessionService(db, generationService, statsService)
+
+	// Initialize handlers
+	authHandler := handlers.NewAuthHandler(authService, profileService)
+	profileHandler := handlers.NewProfileHandler(profileService, statsService)
+	statsHandler := handlers.NewStatsHandler(statsService)
+	focusAreasHandler := handlers.NewFocusAreasHandler()
+	sessionHandler := handlers.NewSessionHandler(sessionService)
+
 	// Setup Gin router
 	router := gin.Default()
 
@@ -58,17 +85,40 @@ func main() {
 	// API routes
 	api := router.Group("/api")
 	{
-		// Focus areas
-		api.GET("/focus-areas", handlers.GetFocusAreas)
+		// Authentication routes (public)
+		api.POST("/auth/login", authHandler.Login)
+		api.POST("/auth/logout", authHandler.Logout)
 
-		// Problems
+		// Focus areas (public)
+		api.GET("/focus-areas", focusAreasHandler.GetFocusAreas)
+
+		// Problems (existing routes)
 		api.GET("/problems", handlers.GetProblems)
 		api.GET("/problems/:id", handlers.GetProblem)
 		api.POST("/problems/generate", handlers.GenerateProblem)
 		api.POST("/problems/generate-stream", handlers.StreamGenerateProblem)
 
-		// Code execution
+		// Code execution (existing)
 		api.POST("/execute", handlers.ExecuteCode)
+
+		// Protected routes
+		protected := api.Group("")
+		protected.Use(middleware.AuthRequired(authService))
+		{
+			// Profile routes
+			protected.POST("/profile/setup", profileHandler.Setup)
+			protected.GET("/profile", profileHandler.GetProfile)
+			protected.PUT("/profile", profileHandler.UpdateProfile)
+			protected.POST("/profile/sync", profileHandler.SyncStats)
+
+			// Stats routes
+			protected.GET("/stats", statsHandler.GetStats)
+
+			// Session routes
+			protected.POST("/sessions", sessionHandler.CreateSession)
+			protected.GET("/sessions/:session_id", sessionHandler.GetSession)
+			protected.GET("/sessions/:session_id/next/:current_number", sessionHandler.GetNextProblem)
+		}
 	}
 
 	// Health check
@@ -101,7 +151,11 @@ func main() {
 
 	log.Println("Shutting down server...")
 
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	// Cancel all background goroutines first
+	cancel()
+
+	// Shutdown HTTP server with timeout
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer shutdownCancel()
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
