@@ -17,7 +17,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 interface CodeEditorProps {
     language: string;
     setLanguage?: (lang: string) => void;
-    code?: string;
+    code: string;
     setCode?: (code: string) => void;
     onRun?: () => void;
     onSubmit?: () => void;
@@ -91,7 +91,7 @@ export function CodeEditor({
                         onClick={onSubmit}
                         disabled={isSubmitting || !onSubmit}
                     >
-                        <SendIcon className="h-3 w-3 mr-1.5" />
+                        {isSubmitting ? <Loader2Icon className="h-3 w-3 mr-1.5 animate-spin" /> : <SendIcon className="h-3 w-3 mr-1.5" />}
                         Submit
                     </Button>
                 </div>

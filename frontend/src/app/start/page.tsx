@@ -184,7 +184,7 @@ export default function StartPage() {
       }));
 
       // Use "playground" ID for execution on Start Page to avoid running against mock problem sample cases
-      const response = await executionApi.execute(code, "playground", language, formattedCustomCases, mode);
+      const response = await executionApi.execute(code || "", "playground", language, formattedCustomCases, mode);
 
       if (response.success || response.results) {
         setExecutionResults(response.results);
@@ -281,7 +281,7 @@ export default function StartPage() {
     <CodeEditor
       language={language}
       setLanguage={setLanguage}
-      code={code}
+      code={code || ""}
       setCode={setCode}
       onRun={handleRun}
       onSubmit={handleSubmit}

@@ -185,7 +185,7 @@ export default function ProblemPage() {
         expected_output: "",
       }));
 
-      const response = await executionApi.execute(code, problemId, language, formattedCustomCases, mode);
+      const response = await executionApi.execute(code || "", problemId, language, formattedCustomCases, mode);
 
       if (response.success || response.results) {
         setExecutionResults(response.results);
@@ -257,9 +257,9 @@ export default function ProblemPage() {
 
   if (currentProblem?.description) {
     const parts = currentProblem.description.split("## Solution Hints");
-    descriptionDisplay = parts[0];
+    descriptionDisplay = parts[0] || "";
     if (parts.length > 1) {
-      hintsDisplay = parts[1];
+      hintsDisplay = parts[1] || "";
     }
   }
 
@@ -364,7 +364,7 @@ export default function ProblemPage() {
     <CodeEditor
       language={language}
       setLanguage={setLanguage}
-      code={code}
+      code={code || ""}
       setCode={setCode}
       onRun={handleRun}
       isRunning={isRunning}

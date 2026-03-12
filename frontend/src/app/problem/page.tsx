@@ -93,7 +93,7 @@ export default function ProblemsIndexPage() {
                                     </h3>
 
                                     <p className="text-sm text-muted-foreground line-clamp-3 mb-4">
-                                        {problem.description?.split("##")[0].replace(/[#*`]/g, "") || "No description preview."}
+                                        {problem.description?.split("##")[0]?.replace(/[#*`]/g, "") || "No description preview."}
                                     </p>
 
                                     <div className="absolute bottom-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">
