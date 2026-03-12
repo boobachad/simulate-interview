@@ -35,6 +35,7 @@ type CodeforcesStats struct {
 	Rank           string         `json:"rank"`
 	MaxRank        string         `json:"max_rank"`
 	ProblemsSolved int            `json:"problems_solved"`
+	ContestCount   int            `json:"contest_count"`
 	Tags           map[string]int `json:"tags"`
 }
 
@@ -274,6 +275,22 @@ func FetchCodeforcesStats(username string) (*CodeforcesStats, error) {
 					stats.Tags[tag]++
 				}
 			}
+		}
+	}
+
+	// Fetch contest participation count
+	contestURL := fmt.Sprintf("https://codeforces.com/api/user.rating?handle=%s", username)
+	resp2, err := client.Get(contestURL)
+	if err == nil {
+		defer resp2.Body.Close()
+		var contestResult struct {
+			Status string `json:"status"`
+			Result []struct {
+				ContestID int `json:"contestId"`
+			} `json:"result"`
+		}
+		if err := json.NewDecoder(resp2.Body).Decode(&contestResult); err == nil {
+			stats.ContestCount = len(contestResult.Result)
 		}
 	}
 

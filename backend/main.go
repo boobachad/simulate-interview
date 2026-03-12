@@ -1,8 +1,13 @@
 package main
 
 import (
+	"context"
 	"log"
+	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/boobachad/simulate-interview/backend/config"
 	"github.com/boobachad/simulate-interview/backend/database"
@@ -13,6 +18,10 @@ import (
 )
 
 func main() {
+	// Create root context with cancellation
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	// Load .env file
 	if err := godotenv.Load(); err != nil {
 		log.Println("No .env file found, using environment variables")
@@ -23,8 +32,8 @@ func main() {
 		log.Fatalf("Failed to load configuration: %v", err)
 	}
 
-	// Connect to database
-	if err := database.Connect(); err != nil {
+	// Connect to database with context
+	if err := database.Connect(ctx); err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
 
@@ -37,14 +46,14 @@ func main() {
 	router := gin.Default()
 
 	// CORS middleware
-	c := cors.DefaultConfig()
-	c.AllowOrigins = []string{
+	corsConfig := cors.DefaultConfig()
+	corsConfig.AllowOrigins = []string{
 		"http://localhost:3000",
 		"http://simulate-interview.localhost:1355",
 	}
-	c.AllowMethods = []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}
-	c.AllowHeaders = []string{"Origin", "Content-Length", "Content-Type", "Authorization"}
-	router.Use(cors.New(c))
+	corsConfig.AllowMethods = []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}
+	corsConfig.AllowHeaders = []string{"Origin", "Content-Length", "Content-Type", "Authorization"}
+	router.Use(cors.New(corsConfig))
 
 	// API routes
 	api := router.Group("/api")
@@ -74,8 +83,33 @@ func main() {
 		port = "8080"
 	}
 
-	log.Printf("Server starting on port %s", port)
-	if err := router.Run(":" + port); err != nil {
-		log.Fatalf("Failed to start server: %v", err)
+	// Create HTTP server
+	srv := &http.Server{
+		Addr:    ":" + port,
+		Handler: router,
 	}
+
+	// Start server in goroutine
+	go func() {
+		log.Printf("Server starting on port %s", port)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Failed to start server: %v", err)
+		}
+	}()
+
+	// Graceful shutdown
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	log.Println("Shutting down server...")
+
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer shutdownCancel()
+
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		log.Printf("Server forced to shutdown: %v", err)
+	}
+
+	log.Println("Server exited")
 }

@@ -111,3 +111,181 @@ type ExecutionResponse struct {
 	TotalPassed int               `json:"total_passed"`
 	TotalCases  int               `json:"total_cases"`
 }
+
+// ============================================================================
+// Personalized Interview System Models
+// ============================================================================
+
+// UserProfile represents user authentication and profile
+type UserProfile struct {
+	ID           uuid.UUID `gorm:"type:uuid;primary_key;default:gen_random_uuid()" json:"id"`
+	Name         string    `gorm:"type:varchar(255);unique;not null" json:"name"`
+	PasswordHash string    `gorm:"type:varchar(255);not null" json:"-"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+// BeforeCreate sets UUID before creating record
+func (u *UserProfile) BeforeCreate(tx *gorm.DB) error {
+	if u.ID == uuid.Nil {
+		u.ID = uuid.New()
+	}
+	return nil
+}
+
+// CodingProfile represents coding platform credentials
+type CodingProfile struct {
+	ID         uuid.UUID  `gorm:"type:uuid;primary_key;default:gen_random_uuid()" json:"id"`
+	UserID     uuid.UUID  `gorm:"type:uuid;not null" json:"user_id"`
+	Platform   string     `gorm:"type:varchar(50);not null" json:"platform"`
+	Username   string     `gorm:"type:varchar(255);not null" json:"username"`
+	LastSynced *time.Time `json:"last_synced"`
+}
+
+// BeforeCreate sets UUID before creating record
+func (c *CodingProfile) BeforeCreate(tx *gorm.DB) error {
+	if c.ID == uuid.Nil {
+		c.ID = uuid.New()
+	}
+	return nil
+}
+
+// StatsJSON wrapper for json.RawMessage to implement Scanner and Valuer interfaces
+type StatsJSON json.RawMessage
+
+// Value implementation for driver.Valuer
+func (s StatsJSON) Value() (driver.Value, error) {
+	if len(s) == 0 {
+		return nil, nil
+	}
+	return json.RawMessage(s).MarshalJSON()
+}
+
+// Scan implementation for sql.Scanner
+func (s *StatsJSON) Scan(value interface{}) error {
+	if value == nil {
+		*s = StatsJSON("{}")
+		return nil
+	}
+	bytes, ok := value.([]byte)
+	if !ok {
+		return errors.New("type assertion to []byte failed")
+	}
+	*s = StatsJSON(bytes)
+	return nil
+}
+
+// UserStats represents cached user statistics
+type UserStats struct {
+	ID        uuid.UUID `gorm:"type:uuid;primary_key;default:gen_random_uuid()" json:"id"`
+	UserID    uuid.UUID `gorm:"type:uuid;not null" json:"user_id"`
+	Platform  string    `gorm:"type:varchar(50);not null" json:"platform"`
+	StatsJSON StatsJSON `gorm:"type:jsonb;not null" json:"stats_json"`
+	SyncedAt  time.Time `json:"synced_at"`
+}
+
+// BeforeCreate sets UUID before creating record
+func (u *UserStats) BeforeCreate(tx *gorm.DB) error {
+	if u.ID == uuid.Nil {
+		u.ID = uuid.New()
+	}
+	return nil
+}
+
+// UserFocusProgress represents user progress per focus area
+type UserFocusProgress struct {
+	ID          uuid.UUID `gorm:"type:uuid;primary_key;default:gen_random_uuid()" json:"id"`
+	UserID      uuid.UUID `gorm:"type:uuid;not null" json:"user_id"`
+	Platform    string    `gorm:"type:varchar(50);not null" json:"platform"`
+	Topic       string    `gorm:"type:varchar(255);not null" json:"topic"`
+	SolvedCount int       `gorm:"default:0" json:"solved_count"`
+}
+
+// BeforeCreate sets UUID before creating record
+func (u *UserFocusProgress) BeforeCreate(tx *gorm.DB) error {
+	if u.ID == uuid.Nil {
+		u.ID = uuid.New()
+	}
+	return nil
+}
+
+// InterviewSession represents an interview session
+type InterviewSession struct {
+	ID                   uuid.UUID `gorm:"type:uuid;primary_key;default:gen_random_uuid()" json:"id"`
+	UserID               uuid.UUID `gorm:"type:uuid;not null" json:"user_id"`
+	ProblemCount         int       `gorm:"not null" json:"problem_count"`
+	FocusMode            string    `gorm:"type:varchar(20);not null" json:"focus_mode"`
+	FocusTopic           *string   `gorm:"type:varchar(255)" json:"focus_topic"`
+	CurrentProblemNumber int       `gorm:"default:1" json:"current_problem_number"`
+	Status               string    `gorm:"type:varchar(20);default:'active'" json:"status"`
+	CreatedAt            time.Time `json:"created_at"`
+}
+
+// BeforeCreate sets UUID before creating record
+func (i *InterviewSession) BeforeCreate(tx *gorm.DB) error {
+	if i.ID == uuid.Nil {
+		i.ID = uuid.New()
+	}
+	return nil
+}
+
+// ProblemData wrapper for json.RawMessage to implement Scanner and Valuer interfaces
+type ProblemData json.RawMessage
+
+// Value implementation for driver.Valuer
+func (p ProblemData) Value() (driver.Value, error) {
+	if len(p) == 0 {
+		return nil, nil
+	}
+	return json.RawMessage(p).MarshalJSON()
+}
+
+// Scan implementation for sql.Scanner
+func (p *ProblemData) Scan(value interface{}) error {
+	if value == nil {
+		*p = ProblemData("{}")
+		return nil
+	}
+	bytes, ok := value.([]byte)
+	if !ok {
+		return errors.New("type assertion to []byte failed")
+	}
+	*p = ProblemData(bytes)
+	return nil
+}
+
+// SessionProblem represents a problem in a session with generation status
+type SessionProblem struct {
+	ID            uuid.UUID   `gorm:"type:uuid;primary_key;default:gen_random_uuid()" json:"id"`
+	SessionID     uuid.UUID   `gorm:"type:uuid;not null" json:"session_id"`
+	ProblemNumber int         `gorm:"not null" json:"problem_number"`
+	Status        string      `gorm:"type:varchar(20);not null" json:"status"`
+	ProblemID     *uuid.UUID  `gorm:"type:uuid" json:"problem_id"`
+	ProblemData   ProblemData `gorm:"type:jsonb" json:"problem_data"`
+	GeneratedAt   *time.Time  `json:"generated_at"`
+	ErrorMessage  *string     `gorm:"type:text" json:"error_message"`
+}
+
+// BeforeCreate sets UUID before creating record
+func (s *SessionProblem) BeforeCreate(tx *gorm.DB) error {
+	if s.ID == uuid.Nil {
+		s.ID = uuid.New()
+	}
+	return nil
+}
+
+// SessionToken represents authentication session token
+type SessionToken struct {
+	ID        uuid.UUID `gorm:"type:uuid;primary_key;default:gen_random_uuid()" json:"id"`
+	UserID    uuid.UUID `gorm:"type:uuid;not null" json:"user_id"`
+	Token     string    `gorm:"type:varchar(255);unique;not null" json:"token"`
+	ExpiresAt time.Time `gorm:"not null" json:"expires_at"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// BeforeCreate sets UUID before creating record
+func (s *SessionToken) BeforeCreate(tx *gorm.DB) error {
+	if s.ID == uuid.Nil {
+		s.ID = uuid.New()
+	}
+	return nil
+}

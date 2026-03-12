@@ -35,7 +35,7 @@ func StreamGenerateProblem(c *gin.Context) {
 	}
 
 	// Create LLM provider
-	llm_provider, err := services.NewLLMProvider()
+	llmProvider, err := services.NewLLMProvider()
 	if err != nil {
 		log.Printf("Error creating LLM provider: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -51,40 +51,40 @@ func StreamGenerateProblem(c *gin.Context) {
 	c.Header("Transfer-Encoding", "chunked")
 
 	// Create channel for streaming
-	stream_chan := make(chan string, 10)
-	done_chan := make(chan error, 1)
+	streamChan := make(chan string, 10)
+	doneChan := make(chan error, 1)
 
 	// Start streaming in goroutine
-	ctx := context.Background()
+	ctx := c.Request.Context()
 	go func() {
-		defer close(stream_chan)
-		err := llm_provider.GenerateProblemStream(ctx, request.FocusAreas, stream_chan)
-		done_chan <- err
+		defer close(streamChan)
+		err := llmProvider.GenerateProblemStream(ctx, request.FocusAreas, streamChan)
+		doneChan <- err
 	}()
 
 	// Collect full response while streaming to client
-	var full_response strings.Builder
+	var fullResponse strings.Builder
 
 	// Stream chunks to client
 	for {
 		select {
-		case chunk, ok := <-stream_chan:
+		case chunk, ok := <-streamChan:
 			if !ok {
 				// Channel closed, streaming done
 				goto process_response
 			}
-			full_response.WriteString(chunk)
+			fullResponse.WriteString(chunk)
 
 			// Send chunk as SSE
 			event := fmt.Sprintf("data: %s\n\n", chunk)
 			c.Writer.WriteString(event)
 			c.Writer.Flush()
 
-		case err := <-done_chan:
+		case err := <-doneChan:
 			if err != nil {
 				log.Printf("Streaming error: %v", err)
-				error_event := fmt.Sprintf("event: error\ndata: %s\n\n", err.Error())
-				c.Writer.WriteString(error_event)
+				errorEvent := fmt.Sprintf("event: error\ndata: %s\n\n", err.Error())
+				c.Writer.WriteString(errorEvent)
 				c.Writer.Flush()
 				return
 			}
@@ -94,21 +94,21 @@ func StreamGenerateProblem(c *gin.Context) {
 
 process_response:
 	// Wait for any remaining error
-	err = <-done_chan
+	err = <-doneChan
 	if err != nil {
 		log.Printf("Streaming error: %v", err)
-		error_event := fmt.Sprintf("event: error\ndata: %s\n\n", err.Error())
-		c.Writer.WriteString(error_event)
+		errorEvent := fmt.Sprintf("event: error\ndata: %s\n\n", err.Error())
+		c.Writer.WriteString(errorEvent)
 		c.Writer.Flush()
 		return
 	}
 
 	// Parse the complete response
-	content := full_response.String()
+	content := fullResponse.String()
 	content = utils.ExtractJSON(content)
 
-	var problem_response models.ProblemGenerationResponse
-	err = json.Unmarshal([]byte(content), &problem_response)
+	var problemResponse models.ProblemGenerationResponse
+	err = json.Unmarshal([]byte(content), &problemResponse)
 	if err != nil {
 		log.Printf("Failed to parse streamed response: %s", content)
 		c.Writer.WriteString("event: error\ndata: Failed to parse response\n\n")
@@ -117,22 +117,22 @@ process_response:
 	}
 
 	// Find or create focus area
-	var focus_area models.FocusArea
-	result := database.DB.Where("slug = ?", utils.Slugify(problem_response.FocusArea)).First(&focus_area)
+	var focusArea models.FocusArea
+	result := database.DB.Where("slug = ?", utils.Slugify(problemResponse.FocusArea)).First(&focusArea)
 	if result.Error != nil {
 		// If focus area doesn't exist, use the first requested focus area
-		database.DB.Where("slug = ?", request.FocusAreas[0]).First(&focus_area)
+		database.DB.Where("slug = ?", request.FocusAreas[0]).First(&focusArea)
 	}
 
 	// Check if a problem with the same title already exists (Deduplication)
 	var existingProblem models.Problem
-	if result := database.DB.Where("title = ?", problem_response.Title).First(&existingProblem); result.Error == nil {
+	if result := database.DB.Where("title = ?", problemResponse.Title).First(&existingProblem); result.Error == nil {
 		log.Printf("Found existing problem with title '%s', reusing ID: %s", existingProblem.Title, existingProblem.ID)
 		database.DB.Preload("FocusArea").First(&existingProblem, "id = ?", existingProblem.ID)
 
-		problem_json, _ := json.Marshal(existingProblem)
-		completion_event := fmt.Sprintf("event: complete\ndata: %s\n\n", string(problem_json))
-		c.Writer.WriteString(completion_event)
+		problemJSON, _ := json.Marshal(existingProblem)
+		completionEvent := fmt.Sprintf("event: complete\ndata: %s\n\n", string(problemJSON))
+		c.Writer.WriteString(completionEvent)
 		c.Writer.Flush()
 		return
 	}
@@ -140,11 +140,11 @@ process_response:
 	// Save problem to database
 	problem := models.Problem{
 		ID:          uuid.New(),
-		Title:       problem_response.Title,
-		Description: problem_response.Description,
-		FocusAreaID: focus_area.ID,
-		SampleCases: problem_response.SampleCases,
-		HiddenCases: problem_response.HiddenCases,
+		Title:       problemResponse.Title,
+		Description: problemResponse.Description,
+		FocusAreaID: focusArea.ID,
+		SampleCases: problemResponse.SampleCases,
+		HiddenCases: problemResponse.HiddenCases,
 	}
 
 	result = database.DB.Create(&problem)
@@ -161,8 +161,8 @@ process_response:
 	log.Printf("Problem generated successfully: %s", problem.Title)
 
 	// Send completion event with problem data
-	problem_json, _ := json.Marshal(problem)
-	completion_event := fmt.Sprintf("event: complete\ndata: %s\n\n", string(problem_json))
-	c.Writer.WriteString(completion_event)
+	problemJSON, _ := json.Marshal(problem)
+	completionEvent := fmt.Sprintf("event: complete\ndata: %s\n\n", string(problemJSON))
+	c.Writer.WriteString(completionEvent)
 	c.Writer.Flush()
 }

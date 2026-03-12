@@ -25,7 +25,7 @@ func ExecuteCode(c *gin.Context) {
 	var problem models.Problem
 
 	if request.ProblemID == "testing" {
-		mock_problem, err := services.LoadMockProblem()
+		mockProblem, err := services.LoadMockProblem()
 		if err != nil {
 			log.Printf("Error loading mock problem: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{
@@ -35,9 +35,9 @@ func ExecuteCode(c *gin.Context) {
 		}
 		// Convert mock problem struct to models.Problem (simplified mapping)
 		problem = models.Problem{
-			Title:       mock_problem.Title,
-			SampleCases: mock_problem.SampleCases,
-			HiddenCases: mock_problem.HiddenCases,
+			Title:       mockProblem.Title,
+			SampleCases: mockProblem.SampleCases,
+			HiddenCases: mockProblem.HiddenCases,
 		}
 	} else if request.ProblemID == "playground" {
 		// Empty problem for playground/scratchpad mode
@@ -59,7 +59,7 @@ func ExecuteCode(c *gin.Context) {
 	}
 
 	// Create execution service
-	exec_service := services.NewExecutionService()
+	execService := services.NewExecutionService()
 
 	// Default to C++ if no language specified
 	language := request.Language
@@ -68,7 +68,7 @@ func ExecuteCode(c *gin.Context) {
 	}
 
 	// Validate code
-	if err := exec_service.ValidateCode(request.Code, language); err != nil {
+	if err := execService.ValidateCode(request.Code, language); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": err.Error(),
 		})
@@ -76,23 +76,23 @@ func ExecuteCode(c *gin.Context) {
 	}
 
 	// Determine test cases based on mode
-	var all_cases []models.TestCase
+	var allCases []models.TestCase
 
 	if request.Mode == "submit" {
 		// Submit: Run against hidden cases (and sample cases usually, but user asked specifically for hidden check differentiation)
 		// Standard practice: Submit runs EVERYTHING to ensure it passes all constraints.
-		all_cases = append(problem.SampleCases, problem.HiddenCases...)
+		allCases = append(problem.SampleCases, problem.HiddenCases...)
 	} else {
 		// Run: Run against Sample Cases + Custom Cases
-		all_cases = problem.SampleCases
+		allCases = problem.SampleCases
 		if len(request.CustomCases) > 0 {
-			all_cases = append(all_cases, request.CustomCases...)
+			allCases = append(allCases, request.CustomCases...)
 		}
 	}
 
 	// Execute code
 	log.Printf("Executing %s code for problem: %s", language, problem.Title)
-	results, err := exec_service.Execute(request.Code, all_cases, language)
+	results, err := execService.Execute(request.Code, allCases, language)
 	if err != nil {
 		log.Printf("Execution error: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -102,17 +102,17 @@ func ExecuteCode(c *gin.Context) {
 	}
 
 	// Count passed tests
-	total_passed := 0
+	totalPassed := 0
 	for _, result := range results {
 		if result.Passed {
-			total_passed++
+			totalPassed++
 		}
 	}
 
 	response := models.ExecutionResponse{
-		Success:     total_passed == len(results),
+		Success:     totalPassed == len(results),
 		Results:     results,
-		TotalPassed: total_passed,
+		TotalPassed: totalPassed,
 		TotalCases:  len(results),
 	}
 

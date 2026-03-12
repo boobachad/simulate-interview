@@ -13,9 +13,9 @@ import (
 
 // GetFocusAreas returns all available focus areas
 func GetFocusAreas(c *gin.Context) {
-	var focus_areas []models.FocusArea
+	var focusAreas []models.FocusArea
 
-	result := database.DB.Order("name ASC").Find(&focus_areas)
+	result := database.DB.Order("name ASC").Find(&focusAreas)
 	if result.Error != nil {
 		log.Printf("Error fetching focus areas: %v", result.Error)
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -24,7 +24,7 @@ func GetFocusAreas(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, focus_areas)
+	c.JSON(http.StatusOK, focusAreas)
 }
 
 // GetProblems returns problems, optionally filtered by focus area
@@ -34,10 +34,10 @@ func GetProblems(c *gin.Context) {
 	query := database.DB.Preload("FocusArea").Order("created_at DESC")
 
 	// Optional filter by focus area slug
-	focus_area := c.Query("focus_area")
-	if focus_area != "" {
+	focusArea := c.Query("focus_area")
+	if focusArea != "" {
 		query = query.Joins("JOIN focus_areas ON focus_areas.id = problems.focus_area_id").
-			Where("focus_areas.slug = ?", focus_area)
+			Where("focus_areas.slug = ?", focusArea)
 	}
 
 	result := query.Find(&problems)
@@ -55,12 +55,12 @@ func GetProblems(c *gin.Context) {
 // GetProblem returns a single problem by ID
 // Special handling for "testing" ID which returns the mock problem
 func GetProblem(c *gin.Context) {
-	problem_id := c.Param("id")
+	problemID := c.Param("id")
 
 	// Handle mock/testing problem
-	if problem_id == "testing" {
+	if problemID == "testing" {
 		// Return the mock problem from file
-		mock_problem, err := services.LoadMockProblem()
+		mockProblem, err := services.LoadMockProblem()
 		if err != nil {
 			log.Printf("Error loading mock problem: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{
@@ -70,24 +70,24 @@ func GetProblem(c *gin.Context) {
 		}
 
 		// Find the focus area
-		var focus_area models.FocusArea
-		database.DB.Where("slug = ?", mock_problem.FocusArea).First(&focus_area)
+		var focusArea models.FocusArea
+		database.DB.Where("slug = ?", mockProblem.FocusArea).First(&focusArea)
 
 		// Return mock problem with special handling
 		c.JSON(http.StatusOK, gin.H{
 			"id":           "testing",
-			"title":        mock_problem.Title,
-			"description":  utils.FormatMarkdownDescription(mock_problem.Description),
-			"focus_area":   focus_area,
-			"sample_cases": mock_problem.SampleCases,
-			"hidden_cases": mock_problem.HiddenCases,
+			"title":        mockProblem.Title,
+			"description":  utils.FormatMarkdownDescription(mockProblem.Description),
+			"focus_area":   focusArea,
+			"sample_cases": mockProblem.SampleCases,
+			"hidden_cases": mockProblem.HiddenCases,
 			"created_at":   nil,
 		})
 		return
 	}
 
 	var problem models.Problem
-	result := database.DB.Preload("FocusArea").First(&problem, "id = ?", problem_id)
+	result := database.DB.Preload("FocusArea").First(&problem, "id = ?", problemID)
 	if result.Error != nil {
 		log.Printf("Error fetching problem: %v", result.Error)
 		c.JSON(http.StatusNotFound, gin.H{

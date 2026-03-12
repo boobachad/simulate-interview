@@ -1,9 +1,11 @@
 package database
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	"github.com/boobachad/simulate-interview/backend/models"
 	"gorm.io/driver/postgres"
@@ -18,22 +20,58 @@ func GetDB() *gorm.DB {
 	return DB
 }
 
-// Connect establishes database connection
-func Connect() error {
-	database_url := os.Getenv("DATABASE_URL")
-	if database_url == "" {
+// Connect establishes database connection with context
+func Connect(ctx context.Context) error {
+	databaseURL := os.Getenv("DATABASE_URL")
+	if databaseURL == "" {
 		return fmt.Errorf("DATABASE_URL environment variable not set")
 	}
 
 	var err error
-	DB, err = gorm.Open(postgres.Open(database_url), &gorm.Config{
+	DB, err = gorm.Open(postgres.Open(databaseURL), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Error),
 	})
 	if err != nil {
 		return fmt.Errorf("failed to connect to database: %w", err)
 	}
 
+	// Configure connection pool
+	if err := ConfigureConnectionPool(ctx, DB); err != nil {
+		return fmt.Errorf("configure connection pool: %w", err)
+	}
+
 	log.Println("Database connection established")
+	return nil
+}
+
+// ConfigureConnectionPool sets optimal connection pool settings
+func ConfigureConnectionPool(ctx context.Context, db *gorm.DB) error {
+	sqlDB, err := db.DB()
+	if err != nil {
+		return fmt.Errorf("get underlying sql.DB: %w", err)
+	}
+
+	// Maximum number of open connections to the database
+	sqlDB.SetMaxOpenConns(25)
+
+	// Maximum number of idle connections in the pool
+	sqlDB.SetMaxIdleConns(5)
+
+	// Maximum lifetime of a connection (prevents stale connections)
+	sqlDB.SetConnMaxLifetime(5 * time.Minute)
+
+	// Maximum idle time for a connection
+	sqlDB.SetConnMaxIdleTime(10 * time.Minute)
+
+	// Verify connection is alive with timeout
+	pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	if err := sqlDB.PingContext(pingCtx); err != nil {
+		return fmt.Errorf("ping database: %w", err)
+	}
+
+	log.Println("Connection pool configured: max_open=25, max_idle=5, lifetime=5m")
 	return nil
 }
 
@@ -50,6 +88,13 @@ func Migrate() error {
 	err := DB.AutoMigrate(
 		&models.FocusArea{},
 		&models.Problem{},
+		&models.UserProfile{},
+		&models.CodingProfile{},
+		&models.UserStats{},
+		&models.UserFocusProgress{},
+		&models.InterviewSession{},
+		&models.SessionProblem{},
+		&models.SessionToken{},
 	)
 	if err != nil {
 		return fmt.Errorf("failed to migrate database: %w", err)
@@ -64,7 +109,7 @@ func Migrate() error {
 
 // seedFocusAreas seeds initial focus areas if they don't exist
 func seedFocusAreas() {
-	focus_areas := []models.FocusArea{
+	focusAreas := []models.FocusArea{
 		{
 			Name:           "Dynamic Programming",
 			Slug:           "dynamic-programming",
@@ -117,7 +162,7 @@ func seedFocusAreas() {
 		},
 	}
 
-	for _, fa := range focus_areas {
+	for _, fa := range focusAreas {
 		var existing models.FocusArea
 		result := DB.Where("slug = ?", fa.Slug).First(&existing)
 		if result.Error == gorm.ErrRecordNotFound {

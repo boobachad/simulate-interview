@@ -39,7 +39,7 @@ func GenerateProblem(c *gin.Context) {
 	}
 
 	// Create LLM provider
-	llm_provider, err := services.NewLLMProvider()
+	llmProvider, err := services.NewLLMProvider()
 	if err != nil {
 		log.Printf("Error creating LLM provider: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -49,11 +49,12 @@ func GenerateProblem(c *gin.Context) {
 	}
 
 	// Check if using mock provider
-	is_mock := services.IsUsingMockProvider(llm_provider)
+	isMock := services.IsUsingMockProvider(llmProvider)
 
-	// Generate problem
+	// Generate problem with context
+	ctx := c.Request.Context()
 	log.Printf("Generating problem for focus areas: %v", request.FocusAreas)
-	problem_response, err := llm_provider.GenerateProblem(request.FocusAreas)
+	problemResponse, err := llmProvider.GenerateProblem(ctx, request.FocusAreas)
 	if err != nil {
 		log.Printf("Error generating problem: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -63,47 +64,47 @@ func GenerateProblem(c *gin.Context) {
 	}
 
 	// If using mock provider, return mock problem with "testing" ID
-	if is_mock {
+	if isMock {
 		// Find the focus area for the mock
-		var focus_area models.FocusArea
-		database.DB.Where("slug = ?", problem_response.FocusArea).First(&focus_area)
+		var focusArea models.FocusArea
+		database.DB.Where("slug = ?", problemResponse.FocusArea).First(&focusArea)
 
 		// Return mock problem with special ID "testing"
-		mock_problem := models.Problem{
-			Title:       problem_response.Title,
-			Description: problem_response.Description,
-			SampleCases: problem_response.SampleCases,
-			HiddenCases: problem_response.HiddenCases,
-			FocusArea:   focus_area,
+		mockProblem := models.Problem{
+			Title:       problemResponse.Title,
+			Description: problemResponse.Description,
+			SampleCases: problemResponse.SampleCases,
+			HiddenCases: problemResponse.HiddenCases,
+			FocusArea:   focusArea,
 		}
 
 		// Return with custom id "testing"
 		c.JSON(http.StatusOK, gin.H{
 			"id":           "testing",
-			"title":        mock_problem.Title,
-			"description":  mock_problem.Description,
-			"focus_area":   mock_problem.FocusArea,
-			"sample_cases": mock_problem.SampleCases,
-			"hidden_cases": mock_problem.HiddenCases,
+			"title":        mockProblem.Title,
+			"description":  mockProblem.Description,
+			"focus_area":   mockProblem.FocusArea,
+			"sample_cases": mockProblem.SampleCases,
+			"hidden_cases": mockProblem.HiddenCases,
 			"created_at":   nil,
 		})
 		return
 	}
 
 	// Find or create focus area
-	var focus_area models.FocusArea
-	result := database.DB.Where("slug = ?", utils.Slugify(problem_response.FocusArea)).First(&focus_area)
+	var focusArea models.FocusArea
+	result := database.DB.Where("slug = ?", utils.Slugify(problemResponse.FocusArea)).First(&focusArea)
 	if result.Error != nil {
 		// If focus area doesn't exist, use the first requested focus area
-		database.DB.Where("slug = ?", request.FocusAreas[0]).First(&focus_area)
+		database.DB.Where("slug = ?", request.FocusAreas[0]).First(&focusArea)
 	}
 
 	// Format description markdown
-	problem_response.Description = utils.FormatMarkdownDescription(problem_response.Description)
+	problemResponse.Description = utils.FormatMarkdownDescription(problemResponse.Description)
 
 	// Check if a problem with the same title already exists (Deduplication)
 	var existingProblem models.Problem
-	if result := database.DB.Where("title = ?", problem_response.Title).First(&existingProblem); result.Error == nil {
+	if result := database.DB.Where("title = ?", problemResponse.Title).First(&existingProblem); result.Error == nil {
 		log.Printf("Found existing problem with title '%s', reusing ID: %s", existingProblem.Title, existingProblem.ID)
 		database.DB.Preload("FocusArea").First(&existingProblem, "id = ?", existingProblem.ID)
 		c.JSON(http.StatusOK, existingProblem)
@@ -113,11 +114,11 @@ func GenerateProblem(c *gin.Context) {
 	// Save problem to database
 	problem := models.Problem{
 		ID:          uuid.New(),
-		Title:       problem_response.Title,
-		Description: problem_response.Description,
-		FocusAreaID: focus_area.ID,
-		SampleCases: problem_response.SampleCases,
-		HiddenCases: problem_response.HiddenCases,
+		Title:       problemResponse.Title,
+		Description: problemResponse.Description,
+		FocusAreaID: focusArea.ID,
+		SampleCases: problemResponse.SampleCases,
+		HiddenCases: problemResponse.HiddenCases,
 	}
 
 	result = database.DB.Create(&problem)

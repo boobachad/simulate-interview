@@ -21,20 +21,20 @@ import (
 
 // LLMProvider interface for problem generation
 type LLMProvider interface {
-	GenerateProblem(focus_areas []string) (*models.ProblemGenerationResponse, error)
-	GenerateProblemStream(ctx context.Context, focus_areas []string, stream_chan chan string) error
+	GenerateProblem(ctx context.Context, focusAreas []string) (*models.ProblemGenerationResponse, error)
+	GenerateProblemStream(ctx context.Context, focusAreas []string, streamChan chan string) error
 }
 
 // GeminiProvider implements LLMProvider for Google Gemini
 type GeminiProvider struct {
-	api_key string
-	model   string
+	apiKey string
+	model  string
 }
 
 // OpenRouterProvider implements LLMProvider for OpenRouter
 type OpenRouterProvider struct {
-	api_key string
-	model   string
+	apiKey string
+	model  string
 }
 
 // NewLLMProvider creates an LLM provider based on configuration
@@ -44,24 +44,24 @@ func NewLLMProvider() (LLMProvider, error) {
 
 	switch provider {
 	case "gemini":
-		api_key := os.Getenv("GEMINI_API_KEY")
-		if api_key == "" || api_key == "demo_key" {
+		apiKey := os.Getenv("GEMINI_API_KEY")
+		if apiKey == "" || apiKey == "demo_key" {
 			log.Println("GEMINI_API_KEY not configured, using mock provider")
 			return &MockProvider{}, nil
 		}
 		return &GeminiProvider{
-			api_key: api_key,
-			model:   config.Config.Gemini.Model,
+			apiKey: apiKey,
+			model:  config.Config.Gemini.Model,
 		}, nil
 	case "openrouter":
-		api_key := os.Getenv("OPENROUTER_API_KEY")
-		if api_key == "" || api_key == "demo_key" {
+		apiKey := os.Getenv("OPENROUTER_API_KEY")
+		if apiKey == "" || apiKey == "demo_key" {
 			log.Println("OPENROUTER_API_KEY not configured, using mock provider")
 			return &MockProvider{}, nil
 		}
 		return &OpenRouterProvider{
-			api_key: api_key,
-			model:   config.Config.OpenRouter.Model,
+			apiKey: apiKey,
+			model:  config.Config.OpenRouter.Model,
 		}, nil
 	default:
 		log.Println("Unknown provider, using mock provider")
@@ -70,9 +70,8 @@ func NewLLMProvider() (LLMProvider, error) {
 }
 
 // GenerateProblem generates a coding problem using Gemini API
-func (g *GeminiProvider) GenerateProblem(focus_areas []string) (*models.ProblemGenerationResponse, error) {
-	ctx := context.Background()
-	client, err := genai.NewClient(ctx, option.WithAPIKey(g.api_key))
+func (g *GeminiProvider) GenerateProblem(ctx context.Context, focusAreas []string) (*models.ProblemGenerationResponse, error) {
+	client, err := genai.NewClient(ctx, option.WithAPIKey(g.apiKey))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Gemini client: %w", err)
 	}
@@ -81,10 +80,10 @@ func (g *GeminiProvider) GenerateProblem(focus_areas []string) (*models.ProblemG
 	model := client.GenerativeModel(g.model)
 	model.SetTemperature(0.9)
 
-	guidance := fetchFocusAreaGuidance(focus_areas)
-	prompt := buildPrompt(focus_areas, guidance)
+	guidance := fetchFocusAreaGuidance(focusAreas)
+	prompt := buildPrompt(focusAreas, guidance)
 
-	log.Printf("Generating problem with Gemini for focus areas: %v", focus_areas)
+	log.Printf("Generating problem with Gemini for focus areas: %v", focusAreas)
 
 	resp, err := model.GenerateContent(ctx, genai.Text(prompt))
 	if err != nil {
@@ -100,19 +99,19 @@ func (g *GeminiProvider) GenerateProblem(focus_areas []string) (*models.ProblemG
 	// Extract JSON from markdown code blocks if present
 	content = utils.ExtractJSON(content)
 
-	var problem_response models.ProblemGenerationResponse
-	err = json.Unmarshal([]byte(content), &problem_response)
+	var problemResponse models.ProblemGenerationResponse
+	err = json.Unmarshal([]byte(content), &problemResponse)
 	if err != nil {
 		log.Printf("Failed to parse Gemini response: %s", content)
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	return &problem_response, nil
+	return &problemResponse, nil
 }
 
 // GenerateProblemStream generates a coding problem using Gemini API with streaming
-func (g *GeminiProvider) GenerateProblemStream(ctx context.Context, focus_areas []string, stream_chan chan string) error {
-	client, err := genai.NewClient(ctx, option.WithAPIKey(g.api_key))
+func (g *GeminiProvider) GenerateProblemStream(ctx context.Context, focusAreas []string, streamChan chan string) error {
+	client, err := genai.NewClient(ctx, option.WithAPIKey(g.apiKey))
 	if err != nil {
 		return fmt.Errorf("failed to create Gemini client: %w", err)
 	}
@@ -121,10 +120,10 @@ func (g *GeminiProvider) GenerateProblemStream(ctx context.Context, focus_areas 
 	model := client.GenerativeModel(g.model)
 	model.SetTemperature(0.9)
 
-	guidance := fetchFocusAreaGuidance(focus_areas)
-	prompt := buildPrompt(focus_areas, guidance)
+	guidance := fetchFocusAreaGuidance(focusAreas)
+	prompt := buildPrompt(focusAreas, guidance)
 
-	log.Printf("Streaming problem generation with Gemini for focus areas: %v", focus_areas)
+	log.Printf("Streaming problem generation with Gemini for focus areas: %v", focusAreas)
 
 	iter := model.GenerateContentStream(ctx, genai.Text(prompt))
 
@@ -139,7 +138,7 @@ func (g *GeminiProvider) GenerateProblemStream(ctx context.Context, focus_areas 
 
 		if len(resp.Candidates) > 0 && len(resp.Candidates[0].Content.Parts) > 0 {
 			chunk := fmt.Sprintf("%v", resp.Candidates[0].Content.Parts[0])
-			stream_chan <- chunk
+			streamChan <- chunk
 		}
 	}
 
@@ -147,13 +146,13 @@ func (g *GeminiProvider) GenerateProblemStream(ctx context.Context, focus_areas 
 }
 
 // GenerateProblem generates a coding problem using OpenRouter API
-func (o *OpenRouterProvider) GenerateProblem(focus_areas []string) (*models.ProblemGenerationResponse, error) {
-	guidance := fetchFocusAreaGuidance(focus_areas)
-	prompt := buildPrompt(focus_areas, guidance)
+func (o *OpenRouterProvider) GenerateProblem(ctx context.Context, focusAreas []string) (*models.ProblemGenerationResponse, error) {
+	guidance := fetchFocusAreaGuidance(focusAreas)
+	prompt := buildPrompt(focusAreas, guidance)
 
-	log.Printf("Generating problem with OpenRouter for focus areas: %v", focus_areas)
+	log.Printf("Generating problem with OpenRouter for focus areas: %v", focusAreas)
 
-	request_body := map[string]interface{}{
+	requestBody := map[string]interface{}{
 		"model": o.model,
 		"messages": []map[string]string{
 			{
@@ -163,17 +162,17 @@ func (o *OpenRouterProvider) GenerateProblem(focus_areas []string) (*models.Prob
 		},
 	}
 
-	json_data, err := json.Marshal(request_body)
+	jsonData, err := json.Marshal(requestBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", "https://openrouter.ai/api/v1/chat/completions", bytes.NewBuffer(json_data))
+	req, err := http.NewRequestWithContext(ctx, "POST", "https://openrouter.ai/api/v1/chat/completions", bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("Authorization", "Bearer "+o.api_key)
+	req.Header.Set("Authorization", "Bearer "+o.apiKey)
 	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{}
@@ -192,12 +191,12 @@ func (o *OpenRouterProvider) GenerateProblem(focus_areas []string) (*models.Prob
 		if resp.StatusCode == http.StatusUnauthorized {
 			log.Printf("OpenRouter API returned 401 Unauthorized. Falling back to MockProvider.")
 			mockProvider := &MockProvider{}
-			return mockProvider.GenerateProblem(focus_areas)
+			return mockProvider.GenerateProblem(ctx, focusAreas)
 		}
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	var api_response struct {
+	var apiResponse struct {
 		Choices []struct {
 			Message struct {
 				Content string `json:"content"`
@@ -205,36 +204,36 @@ func (o *OpenRouterProvider) GenerateProblem(focus_areas []string) (*models.Prob
 		} `json:"choices"`
 	}
 
-	err = json.Unmarshal(body, &api_response)
+	err = json.Unmarshal(body, &apiResponse)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse API response: %w", err)
 	}
 
-	if len(api_response.Choices) == 0 {
+	if len(apiResponse.Choices) == 0 {
 		return nil, fmt.Errorf("no response from OpenRouter")
 	}
 
-	content := api_response.Choices[0].Message.Content
+	content := apiResponse.Choices[0].Message.Content
 	content = utils.ExtractJSON(content)
 
-	var problem_response models.ProblemGenerationResponse
-	err = json.Unmarshal([]byte(content), &problem_response)
+	var problemResponse models.ProblemGenerationResponse
+	err = json.Unmarshal([]byte(content), &problemResponse)
 	if err != nil {
 		log.Printf("Failed to parse OpenRouter response: %s", content)
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	return &problem_response, nil
+	return &problemResponse, nil
 }
 
 // GenerateProblemStream generates a coding problem using OpenRouter API with streaming
-func (o *OpenRouterProvider) GenerateProblemStream(ctx context.Context, focus_areas []string, stream_chan chan string) error {
-	guidance := fetchFocusAreaGuidance(focus_areas)
-	prompt := buildPrompt(focus_areas, guidance)
+func (o *OpenRouterProvider) GenerateProblemStream(ctx context.Context, focusAreas []string, streamChan chan string) error {
+	guidance := fetchFocusAreaGuidance(focusAreas)
+	prompt := buildPrompt(focusAreas, guidance)
 
-	log.Printf("Streaming problem generation with OpenRouter for focus areas: %v", focus_areas)
+	log.Printf("Streaming problem generation with OpenRouter for focus areas: %v", focusAreas)
 
-	request_body := map[string]interface{}{
+	requestBody := map[string]interface{}{
 		"model": o.model,
 		"messages": []map[string]string{
 			{
@@ -245,17 +244,17 @@ func (o *OpenRouterProvider) GenerateProblemStream(ctx context.Context, focus_ar
 		"stream": true,
 	}
 
-	json_data, err := json.Marshal(request_body)
+	jsonData, err := json.Marshal(requestBody)
 	if err != nil {
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", "https://openrouter.ai/api/v1/chat/completions", bytes.NewBuffer(json_data))
+	req, err := http.NewRequestWithContext(ctx, "POST", "https://openrouter.ai/api/v1/chat/completions", bytes.NewBuffer(jsonData))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("Authorization", "Bearer "+o.api_key)
+	req.Header.Set("Authorization", "Bearer "+o.apiKey)
 	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{}
@@ -271,7 +270,7 @@ func (o *OpenRouterProvider) GenerateProblemStream(ctx context.Context, focus_ar
 		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
 			log.Printf("OpenRouter API returned %d. Falling back to MockProvider.", resp.StatusCode)
 			mockProvider := &MockProvider{}
-			return mockProvider.GenerateProblemStream(ctx, focus_areas, stream_chan)
+			return mockProvider.GenerateProblemStream(ctx, focusAreas, streamChan)
 		}
 		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
@@ -299,7 +298,7 @@ func (o *OpenRouterProvider) GenerateProblemStream(ctx context.Context, focus_ar
 					return nil
 				}
 
-				var stream_resp struct {
+				var streamResp struct {
 					Choices []struct {
 						Delta struct {
 							Content string `json:"content"`
@@ -307,9 +306,9 @@ func (o *OpenRouterProvider) GenerateProblemStream(ctx context.Context, focus_ar
 					} `json:"choices"`
 				}
 
-				if err := json.Unmarshal([]byte(data), &stream_resp); err == nil {
-					if len(stream_resp.Choices) > 0 && stream_resp.Choices[0].Delta.Content != "" {
-						stream_chan <- stream_resp.Choices[0].Delta.Content
+				if err := json.Unmarshal([]byte(data), &streamResp); err == nil {
+					if len(streamResp.Choices) > 0 && streamResp.Choices[0].Delta.Content != "" {
+						streamChan <- streamResp.Choices[0].Delta.Content
 					}
 				}
 			}
@@ -320,14 +319,14 @@ func (o *OpenRouterProvider) GenerateProblemStream(ctx context.Context, focus_ar
 }
 
 // buildPrompt creates the prompt for problem generation
-func buildPrompt(focus_areas []string, guidance string) string {
-	focus_str := strings.Join(focus_areas, ", ")
+func buildPrompt(focusAreas []string, guidance string) string {
+	focusStr := strings.Join(focusAreas, ", ")
 
 	// Use provided guidance if available
-	focus_requirements := ""
+	focusRequirements := ""
 	if guidance != "" {
-		if len(focus_areas) > 1 {
-			focus_requirements = fmt.Sprintf(`
+		if len(focusAreas) > 1 {
+			focusRequirements = fmt.Sprintf(`
 
 FOCUS AREA REQUIREMENTS:
 The problem you generate MUST combine ALL of the following focus areas:
@@ -335,30 +334,30 @@ The problem you generate MUST combine ALL of the following focus areas:
 
 IMPORTANT: The problem should require knowledge and techniques from ALL the focus areas listed above. It should not be solvable by using only one of these topics.`, guidance)
 		} else {
-			focus_requirements = fmt.Sprintf(`
+			focusRequirements = fmt.Sprintf(`
 
 FOCUS AREA REQUIREMENTS:
 The problem you generate MUST satisfy the focus area requirements below:
 %s`, guidance)
 		}
-	} else if len(focus_areas) > 0 {
+	} else if len(focusAreas) > 0 {
 		// Fallback generic guidance
-		if len(focus_areas) > 1 {
-			focus_requirements = fmt.Sprintf(`
+		if len(focusAreas) > 1 {
+			focusRequirements = fmt.Sprintf(`
 
 FOCUS AREA REQUIREMENTS:
 The problem you generate MUST combine ALL of the following topics: %s
 - The problem must fundamentally require knowledge of ALL these specific topics to solve efficiently.
 - Do NOT generate a problem that can be solved using only one of these topics.
-- The solution should naturally integrate concepts from all focus areas.`, focus_str)
+- The solution should naturally integrate concepts from all focus areas.`, focusStr)
 		} else {
-			focus_requirements = fmt.Sprintf(`
+			focusRequirements = fmt.Sprintf(`
 
 FOCUS AREA REQUIREMENTS:
 The problem you generate MUST satisfy the focus area requirements below:
 - Primary Topic: %s
 - The problem must fundamentally require knowledge of this specific topic to solve efficiently.
-- Do NOT generate a generic array/string problem unless that is the explicit focus.`, focus_str)
+- Do NOT generate a generic array/string problem unless that is the explicit focus.`, focusStr)
 		}
 	}
 
@@ -400,17 +399,17 @@ You must respond with ONLY valid JSON in the following exact format (no markdown
 - Use proper input/output format that can be read from stdin and written to stdout
 - Make the problem challenging but solvable in 10-15 minutes
 - Include clear constraints in the description
-- **CRITICAL**: Append a '## Solution Hints' section at the very end of the 'description'. Checkpoints or algorithmic hints to help a stuck user, but DO NOT give the full code.`, focus_requirements, focus_str)
+- **CRITICAL**: Append a '## Solution Hints' section at the very end of the 'description'. Checkpoints or algorithmic hints to help a stuck user, but DO NOT give the full code.`, focusRequirements, focusStr)
 }
 
 // fetchFocusAreaGuidance fetches and combines guidance for multiple focus areas
-func fetchFocusAreaGuidance(focus_areas []string) string {
-	if len(focus_areas) == 0 {
+func fetchFocusAreaGuidance(focusAreas []string) string {
+	if len(focusAreas) == 0 {
 		return ""
 	}
 
 	var guidances []string
-	for _, area := range focus_areas {
+	for _, area := range focusAreas {
 		var fa models.FocusArea
 		result := database.DB.Where("slug = ?", utils.Slugify(area)).First(&fa)
 		if result.Error == nil && fa.PromptGuidance != "" {
@@ -429,7 +428,7 @@ func fetchFocusAreaGuidance(focus_areas []string) string {
 type MockProvider struct{}
 
 // GenerateProblem returns a mock problem from the mock_problem.json file
-func (m *MockProvider) GenerateProblem(focus_areas []string) (*models.ProblemGenerationResponse, error) {
+func (m *MockProvider) GenerateProblem(ctx context.Context, focusAreas []string) (*models.ProblemGenerationResponse, error) {
 	log.Println("Using mock problem (API keys not configured)")
 
 	// Read mock problem from file
@@ -438,39 +437,39 @@ func (m *MockProvider) GenerateProblem(focus_areas []string) (*models.ProblemGen
 		return nil, fmt.Errorf("failed to read mock problem file: %w", err)
 	}
 
-	var mock_response models.ProblemGenerationResponse
-	if err := json.Unmarshal(data, &mock_response); err != nil {
+	var mockResponse models.ProblemGenerationResponse
+	if err := json.Unmarshal(data, &mockResponse); err != nil {
 		return nil, fmt.Errorf("failed to parse mock problem: %w", err)
 	}
 
 	// If specific focus areas are requested, update the mock to reflect them
-	if len(focus_areas) > 0 {
-		mock_response.FocusArea = focus_areas[0]
-		log.Printf("Mock problem adapted for focus area: %s", focus_areas[0])
+	if len(focusAreas) > 0 {
+		mockResponse.FocusArea = focusAreas[0]
+		log.Printf("Mock problem adapted for focus area: %s", focusAreas[0])
 	}
 
-	return &mock_response, nil
+	return &mockResponse, nil
 }
 
 // GenerateProblemStream returns a mock problem through streaming
-func (m *MockProvider) GenerateProblemStream(ctx context.Context, focus_areas []string, stream_chan chan string) error {
+func (m *MockProvider) GenerateProblemStream(ctx context.Context, focusAreas []string, streamChan chan string) error {
 	log.Println("Using mock problem stream (API keys not configured)")
 
 	// Get the mock problem
-	problem, err := m.GenerateProblem(focus_areas)
+	problem, err := m.GenerateProblem(ctx, focusAreas)
 	if err != nil {
 		return err
 	}
 
 	// Convert to JSON and send through stream
-	json_data, err := json.MarshalIndent(problem, "", "  ")
+	jsonData, err := json.MarshalIndent(problem, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal mock problem: %w", err)
 	}
 
 	// Send the JSON string through the stream channel
 	select {
-	case stream_chan <- string(json_data):
+	case streamChan <- string(jsonData):
 	case <-ctx.Done():
 		return ctx.Err()
 	}
@@ -480,8 +479,8 @@ func (m *MockProvider) GenerateProblemStream(ctx context.Context, focus_areas []
 
 // IsUsingMockProvider checks if the provider is a mock provider
 func IsUsingMockProvider(provider LLMProvider) bool {
-	_, is_mock := provider.(*MockProvider)
-	return is_mock
+	_, isMock := provider.(*MockProvider)
+	return isMock
 }
 
 // LoadMockProblem loads the mock problem from file
@@ -491,10 +490,10 @@ func LoadMockProblem() (*models.ProblemGenerationResponse, error) {
 		return nil, fmt.Errorf("failed to read mock problem file: %w", err)
 	}
 
-	var mock_response models.ProblemGenerationResponse
-	if err := json.Unmarshal(data, &mock_response); err != nil {
+	var mockResponse models.ProblemGenerationResponse
+	if err := json.Unmarshal(data, &mockResponse); err != nil {
 		return nil, fmt.Errorf("failed to parse mock problem: %w", err)
 	}
 
-	return &mock_response, nil
+	return &mockResponse, nil
 }
