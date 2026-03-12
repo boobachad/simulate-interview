@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"log"
 	"net/http"
 	"strconv"
 
@@ -58,15 +59,19 @@ func (h *FocusAreasHandler) GetFocusAreas(c *gin.Context) {
 	var userProgress map[string]int
 
 	if authenticated {
-		uid := userID.(uuid.UUID)
-		var progressRecords []models.UserFocusProgress
-		if err := db.WithContext(c.Request.Context()).
-			Where("user_id = ?", uid).
-			Find(&progressRecords).Error; err == nil {
-			userProgress = make(map[string]int)
-			for _, p := range progressRecords {
-				key := p.Platform + ":" + p.Topic
-				userProgress[key] = p.SolvedCount
+		uid, ok := userID.(uuid.UUID)
+		if ok {
+			var progressRecords []models.UserFocusProgress
+			if err := db.WithContext(c.Request.Context()).
+				Where("user_id = ?", uid).
+				Find(&progressRecords).Error; err != nil {
+				log.Printf("Failed to query user focus progress for user %s: %v", uid, err)
+			} else {
+				userProgress = make(map[string]int)
+				for _, p := range progressRecords {
+					key := p.Platform + ":" + p.Topic
+					userProgress[key] = p.SolvedCount
+				}
 			}
 		}
 	}

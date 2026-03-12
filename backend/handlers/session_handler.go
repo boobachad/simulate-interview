@@ -59,7 +59,11 @@ func (h *SessionHandler) CreateSession(c *gin.Context) {
 		return
 	}
 
-	uid := userID.(uuid.UUID)
+	uid, ok := userID.(uuid.UUID)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid user ID"})
+		return
+	}
 
 	sessionData, firstProblem, err := h.sessionService.CreateSession(
 		c.Request.Context(),
@@ -78,7 +82,6 @@ func (h *SessionHandler) CreateSession(c *gin.Context) {
 		"description":  firstProblem.Description,
 		"focus_area":   firstProblem.FocusArea,
 		"sample_cases": firstProblem.SampleCases,
-		"hidden_cases": firstProblem.HiddenCases,
 	}
 
 	c.JSON(http.StatusOK, CreateSessionResponse{
@@ -108,7 +111,12 @@ func (h *SessionHandler) GetSession(c *gin.Context) {
 		return
 	}
 
-	uid := userID.(uuid.UUID)
+	uid, ok := userID.(uuid.UUID)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid user ID"})
+		return
+	}
+
 	if sessionData.Session.UserID != uid {
 		c.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
 		return
@@ -145,30 +153,21 @@ func (h *SessionHandler) GetNextProblem(c *gin.Context) {
 		return
 	}
 
-	uid := userID.(uuid.UUID)
+	uid, ok := userID.(uuid.UUID)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid user ID"})
+		return
+	}
+
 	if sessionData.Session.UserID != uid {
 		c.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
 		return
 	}
 
-	ready, err := h.sessionService.IsNextProblemReady(c.Request.Context(), sessionID, currentNumber)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check problem status"})
-		return
-	}
-
-	if !ready {
-		c.JSON(http.StatusOK, NextProblemResponse{
-			Ready: false,
-		})
-		return
-	}
-
 	problem, err := h.sessionService.GetNextProblem(c.Request.Context(), sessionID, currentNumber)
 	if err != nil {
-		c.JSON(http.StatusTooEarly, gin.H{
-			"error": "Problem not ready yet",
-			"ready": false,
+		c.JSON(http.StatusOK, NextProblemResponse{
+			Ready: false,
 		})
 		return
 	}
@@ -178,7 +177,6 @@ func (h *SessionHandler) GetNextProblem(c *gin.Context) {
 		"description":  problem.Description,
 		"focus_area":   problem.FocusArea,
 		"sample_cases": problem.SampleCases,
-		"hidden_cases": problem.HiddenCases,
 	}
 
 	c.JSON(http.StatusOK, NextProblemResponse{

@@ -20,34 +20,34 @@ func NewAuthService(db *gorm.DB) *authService {
 	return &authService{db: db}
 }
 
-// Authenticate validates username and password, returns session token
-func (s *authService) Authenticate(ctx context.Context, username, password string) (string, error) {
+// Authenticate validates username and password, returns session token and user
+func (s *authService) Authenticate(ctx context.Context, username, password string) (string, *models.UserProfile, error) {
 	// Early return for empty credentials
 	if username == "" || password == "" {
-		return "", fmt.Errorf("username and password are required")
+		return "", nil, fmt.Errorf("username and password are required")
 	}
 
 	// Query user by username with context
 	var user models.UserProfile
 	if err := s.db.WithContext(ctx).Where("name = ?", username).First(&user).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return "", fmt.Errorf("user %s not found: %w", username, err)
+			return "", nil, fmt.Errorf("user %s not found: %w", username, err)
 		}
-		return "", fmt.Errorf("query user %s: %w", username, err)
+		return "", nil, fmt.Errorf("query user %s: %w", username, err)
 	}
 
 	// Validate password with bcrypt
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
-		return "", fmt.Errorf("invalid password for user %s: %w", username, err)
+		return "", nil, fmt.Errorf("invalid password for user %s: %w", username, err)
 	}
 
 	// Create session token
 	token, err := s.CreateSession(ctx, user.ID)
 	if err != nil {
-		return "", fmt.Errorf("create session for user %s: %w", user.ID, err)
+		return "", nil, fmt.Errorf("create session for user %s: %w", user.ID, err)
 	}
 
-	return token, nil
+	return token, &user, nil
 }
 
 // CreateSession generates UUID token with 24h expiration

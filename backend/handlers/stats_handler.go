@@ -26,7 +26,11 @@ func (h *StatsHandler) GetStats(c *gin.Context) {
 		return
 	}
 
-	uid := userID.(uuid.UUID)
+	uid, ok := userID.(uuid.UUID)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid user ID"})
+		return
+	}
 
 	stats, err := h.statsService.GetStats(c.Request.Context(), uid)
 	if err != nil {

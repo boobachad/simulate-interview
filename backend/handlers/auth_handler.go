@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"log"
 	"net/http"
+	"strings"
 
 	"github.com/boobachad/simulate-interview/backend/services"
 	"github.com/gin-gonic/gin"
@@ -37,22 +39,16 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	token, err := h.authService.Authenticate(c.Request.Context(), req.Username, req.Password)
+	token, user, err := h.authService.Authenticate(c.Request.Context(), req.Username, req.Password)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid username or password"})
-		return
-	}
-
-	// Validate session to get user
-	user, err := h.authService.ValidateSession(c.Request.Context(), token)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to validate session"})
 		return
 	}
 
 	// Check if user has profile
 	hasProfile, err := h.profileService.HasProfile(c.Request.Context(), user.ID)
 	if err != nil {
+		log.Printf("Failed to check profile status for user %s: %v", user.ID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check profile status"})
 		return
 	}
@@ -72,7 +68,7 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 	}
 
 	// Remove "Bearer " prefix if present
-	if len(token) > 7 && token[:7] == "Bearer " {
+	if strings.HasPrefix(token, "Bearer ") {
 		token = token[7:]
 	}
 

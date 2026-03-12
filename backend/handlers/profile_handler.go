@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/boobachad/simulate-interview/backend/services"
 	"github.com/gin-gonic/gin"
@@ -20,12 +21,7 @@ func NewProfileHandler(profileService services.ProfileService, statsService serv
 	}
 }
 
-type ProfileSetupRequest struct {
-	LeetCodeUsername   string `json:"leetcode_username"`
-	CodeforcesUsername string `json:"codeforces_username"`
-}
-
-type ProfileUpdateRequest struct {
+type ProfileRequest struct {
 	LeetCodeUsername   string `json:"leetcode_username"`
 	CodeforcesUsername string `json:"codeforces_username"`
 }
@@ -38,7 +34,7 @@ func (h *ProfileHandler) Setup(c *gin.Context) {
 		return
 	}
 
-	var req ProfileSetupRequest
+	var req ProfileRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request format"})
 		return
@@ -49,7 +45,11 @@ func (h *ProfileHandler) Setup(c *gin.Context) {
 		return
 	}
 
-	uid := userID.(uuid.UUID)
+	uid, ok := userID.(uuid.UUID)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid user ID"})
+		return
+	}
 
 	// Create profile
 	if err := h.profileService.CreateProfile(c.Request.Context(), uid, req.LeetCodeUsername, req.CodeforcesUsername); err != nil {
@@ -77,7 +77,11 @@ func (h *ProfileHandler) GetProfile(c *gin.Context) {
 		return
 	}
 
-	uid := userID.(uuid.UUID)
+	uid, ok := userID.(uuid.UUID)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid user ID"})
+		return
+	}
 
 	profile, err := h.profileService.GetProfile(c.Request.Context(), uid)
 	if err != nil {
@@ -96,13 +100,17 @@ func (h *ProfileHandler) UpdateProfile(c *gin.Context) {
 		return
 	}
 
-	var req ProfileUpdateRequest
+	var req ProfileRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request format"})
 		return
 	}
 
-	uid := userID.(uuid.UUID)
+	uid, ok := userID.(uuid.UUID)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid user ID"})
+		return
+	}
 
 	if err := h.profileService.UpdateProfile(c.Request.Context(), uid, req.LeetCodeUsername, req.CodeforcesUsername); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update profile"})
@@ -120,7 +128,11 @@ func (h *ProfileHandler) SyncStats(c *gin.Context) {
 		return
 	}
 
-	uid := userID.(uuid.UUID)
+	uid, ok := userID.(uuid.UUID)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid user ID"})
+		return
+	}
 
 	if err := h.statsService.SyncStats(c.Request.Context(), uid); err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Unable to fetch stats from both platforms, please try again later"})
@@ -129,6 +141,6 @@ func (h *ProfileHandler) SyncStats(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"success":   true,
-		"synced_at": "now",
+		"synced_at": time.Now().UTC().Format(time.RFC3339),
 	})
 }

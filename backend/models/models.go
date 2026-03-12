@@ -211,8 +211,8 @@ func (u *UserFocusProgress) BeforeCreate(tx *gorm.DB) error {
 // FocusAreaDynamic represents dynamic focus areas from platform APIs
 type FocusAreaDynamic struct {
 	ID           uuid.UUID `gorm:"type:uuid;primary_key;default:gen_random_uuid()" json:"id"`
-	Platform     string    `gorm:"type:varchar(50);not null" json:"platform"`
-	Topic        string    `gorm:"type:varchar(255);not null" json:"topic"`
+	Platform     string    `gorm:"type:varchar(50);not null;uniqueIndex:idx_platform_topic" json:"platform"`
+	Topic        string    `gorm:"type:varchar(255);not null;uniqueIndex:idx_platform_topic" json:"topic"`
 	ProblemCount int       `gorm:"not null" json:"problem_count"`
 	UpdatedAt    time.Time `json:"updated_at"`
 }

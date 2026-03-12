@@ -8,7 +8,7 @@ import (
 )
 
 type AuthService interface {
-	Authenticate(ctx context.Context, username, password string) (string, error)
+	Authenticate(ctx context.Context, username, password string) (string, *models.UserProfile, error)
 	ValidateSession(ctx context.Context, token string) (*models.UserProfile, error)
 	CreateSession(ctx context.Context, userID uuid.UUID) (string, error)
 	InvalidateSession(ctx context.Context, token string) error
