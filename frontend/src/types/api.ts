@@ -97,6 +97,7 @@ export interface Problem {
   id: ProblemID;
   title: string;
   description: string;
+  difficulty?: "easy" | "medium" | "hard";
   focus_area: string;
   sample_cases: TestCase[];
   created_at: string;

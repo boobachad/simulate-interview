@@ -1,13 +1,14 @@
 'use client';
 
 import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Loader2Icon, PlayIcon, SendIcon, ClockIcon, LockIcon, UnlockIcon } from "lucide-react";
+import { LockIcon, UnlockIcon, ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
 import { InterviewSplitLayout } from "@/components/InterviewSplitLayout";
 import { useInterviewStore } from "@/lib/store";
-import { problemsApi, executionApi } from "@/lib/api"; // Added executionApi
+import { problemsApi, executionApi } from "@/lib/api";
+import { apiClient } from "@/lib/api-client";
 import { toast } from "sonner";
 import { CodeEditor } from "@/components/CodeEditor";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -15,136 +16,61 @@ import ReactMarkdown from "react-markdown";
 import { TestCasesView } from "@/components/TestCasesView";
 import { InterviewTimer } from "@/components/InterviewTimer";
 import { Navbar } from "@/components/Navbar";
-
-const CPP_BOILERPLATE = `#include <bits/stdc++.h>
-using namespace std;
-
-void solve() {
-    // ============================================
-    // START: Write your solution code here
-    // ============================================
-    
-    int a, b;
-    cin >> a >> b;
-    cout << a + b << endl;
-    
-    // ============================================
-    // END: Write your solution code above
-    // ============================================
-}
-
-// DO NOT MODIFY BELOW THIS LINE
-int main() {
-    ios_base::sync_with_stdio(false);
-    cin.tie(NULL);
-    int t;
-    cin >> t;
-    while(t--) solve();
-    return 0;
-}`;
-
-const PYTHON_BOILERPLATE = `def solve():
-    # ============================================
-    # START: Write your solution code here
-    # ============================================
-    
-    a, b = map(int, input().split())
-    print(a + b)
-    
-    # ============================================
-    # END: Write your solution code above
-    # ============================================
-
-# DO NOT MODIFY BELOW THIS LINE
-if __name__ == "__main__":
-    t = int(input())
-    for _ in range(t):
-        solve()`;
-
-const JAVA_BOILERPLATE = `import java.util.*;
-import java.io.*;
-
-public class Main {
-    public static void solve(Scanner sc) {
-        // ============================================
-        // START: Write your solution code here
-        // ============================================
-        
-        int a = sc.nextInt();
-        int b = sc.nextInt();
-        System.out.println(a + b);
-        
-        // ============================================
-        // END: Write your solution code above
-        // ============================================
-    }
-    
-    // DO NOT MODIFY BELOW THIS LINE
-    public static void main(String[] args) {
-        Scanner sc = new Scanner(System.in);
-        int t = sc.nextInt();
-        while (t-- > 0) {
-            solve(sc);
-        }
-        sc.close();
-    }
-}`;
-
-const JAVASCRIPT_BOILERPLATE = `const readline = require('readline');
-const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout
-});
-
-let lines = [];
-rl.on('line', (line) => {
-    lines.push(line);
-}).on('close', () => {
-    const t = parseInt(lines[0]);
-    let idx = 1;
-    
-    for (let i = 0; i < t; i++) {
-        // ============================================
-        // START: Write your solution code here
-        // ============================================
-        
-        const [a, b] = lines[idx++].split(' ').map(Number);
-        console.log(a + b);
-        
-        // ============================================
-        // END: Write your solution code above
-        // ============================================
-    }
-});`;
-
-const BOILERPLATES: Record<string, string> = {
-    cpp: CPP_BOILERPLATE,
-    python: PYTHON_BOILERPLATE,
-    java: JAVA_BOILERPLATE,
-    javascript: JAVASCRIPT_BOILERPLATE,
-};
+import { BOILERPLATES } from "@/lib/boilerplates";
+import { useSessionTimer } from "@/hooks/useSessionTimer";
+import { useProblemTimer } from "@/hooks/useProblemTimer";
+import { useCodePersistence } from "@/hooks/useCodePersistence";
+import { ProblemTimer } from "@/components/ProblemTimer";
+import type { SessionData, SessionID } from "@/types/api";
 
 export default function ProblemPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const problemId = params.id as string;
+  const sessionIdParam = searchParams.get("session");
   const { currentProblem, setCurrentProblem } = useInterviewStore();
 
+  const [isSessionMode, setIsSessionMode] = useState(false);
+  const [sessionData, setSessionData] = useState<SessionData | null>(null);
+  const [currentProblemIndex, setCurrentProblemIndex] = useState(0);
+
+  // Session timer hook
+  const { timeLeft, totalTime, setTimeLeft } = useSessionTimer(
+    sessionIdParam,
+    sessionData
+  );
+
+  // Problem timer hook (count-up for tracking)
+  const { problemTime } = useProblemTimer(problemId, sessionIdParam);
+
   const [language, setLanguage] = useState("cpp");
-  const [code, setCode] = useState(BOILERPLATES.cpp);
   const [isRunning, setIsRunning] = useState(false);
 
-  // Custom Test Cases State lifted from TestCasesView
-  const [customTestCases, setCustomTestCases] = useState<{ id: string; input: string }[]>([]);
+  // Code persistence hook
+  const { code, saveCode, cleanupSessionCode } = useCodePersistence(
+    problemId,
+    language,
+    sessionIdParam
+  );
 
-  // Store execution results
+  const [customTestCases, setCustomTestCases] = useState<{ id: string; input: string }[]>([]);
   const [executionResults, setExecutionResults] = useState<any[] | null>(null);
   const [executionError, setExecutionError] = useState<string | null>(null);
 
-  // Update code when language changes
+  // Session detection and validation
   useEffect(() => {
-    setCode(BOILERPLATES[language] || BOILERPLATES.cpp);
-  }, [language]);
+    const detectSession = async () => {
+      if (sessionIdParam) {
+        setIsSessionMode(true);
+        await loadSession(sessionIdParam);
+      } else {
+        setIsSessionMode(false);
+      }
+    };
+
+    detectSession();
+  }, [sessionIdParam]);
 
   useEffect(() => {
     if (!currentProblem || currentProblem.id !== problemId) {
@@ -156,12 +82,61 @@ export default function ProblemPage() {
     setExecutionResults(null);
   }, [customTestCases]);
 
+  const loadSession = async (sessionId: string) => {
+    try {
+      const session = await apiClient.sessions.get(sessionId as SessionID);
+      setSessionData(session);
+      
+      const problemIdx = session.problems.findIndex(
+        (p) => p.problem?.id === problemId
+      );
+      if (problemIdx !== -1) {
+        setCurrentProblemIndex(problemIdx);
+      }
+    } catch (error) {
+      console.error("Failed to load session:", error);
+      toast.error("Failed to load session");
+    }
+  };
+
   const loadProblem = async () => {
     try {
       const problem = await problemsApi.getById(problemId);
       setCurrentProblem(problem);
     } catch (error) {
       toast.error("Failed to load problem");
+    }
+  };
+
+  const handlePreviousProblem = () => {
+    if (!sessionData || currentProblemIndex === 0) return;
+    
+    const prevProblem = sessionData.problems[currentProblemIndex - 1];
+    if (prevProblem?.problem) {
+      router.push(`/problem/${prevProblem.problem.id}?session=${sessionData.id}`);
+    }
+  };
+
+  const handleNextProblem = () => {
+    if (!sessionData || currentProblemIndex >= sessionData.problems.length - 1) return;
+    
+    const nextProblem = sessionData.problems[currentProblemIndex + 1];
+    if (nextProblem?.problem && nextProblem.status === "ready") {
+      router.push(`/problem/${nextProblem.problem.id}?session=${sessionData.id}`);
+    }
+  };
+
+  const handleCompleteSession = async () => {
+    if (!sessionIdParam) return;
+
+    try {
+      await apiClient.sessions.complete(sessionIdParam as SessionID);
+      cleanupSessionCode();
+      toast.success("Session completed!");
+      router.push("/start");
+    } catch (error) {
+      console.error("Failed to complete session:", error);
+      toast.error("Failed to complete session");
     }
   };
 
@@ -220,21 +195,17 @@ export default function ProblemPage() {
     }
   };
 
-  // --- Timer & Hints State ---
-  const durationMinutes = Number(process.env.NEXT_PUBLIC_INTERVIEW_DURATION_MINUTES) || 30;
+  // --- Hints State ---
   const solutionPenaltyMinutes = Number(process.env.NEXT_PUBLIC_SOLUTION_PENALTY_MINUTES) || 5;
-  const wrongSubmissionPenaltyMinutes = Number(process.env.NEXT_PUBLIC_WRONG_SUBMISSION_PENALTY_MINUTES) || 2;
-
-  const [timeLeft, setTimeLeft] = useState(durationMinutes * 60);
   const [isHintsUnlocked, setIsHintsUnlocked] = useState(false);
 
-  // Auto-unlock hints when time runs out
+  // Auto-unlock hints when time runs out (standalone mode only)
   useEffect(() => {
-    if (timeLeft <= 0 && !isHintsUnlocked) {
+    if (!isSessionMode && timeLeft <= 0 && !isHintsUnlocked) {
       setIsHintsUnlocked(true);
       toast.info("Time's up! Hints have been unlocked.");
     }
-  }, [timeLeft, isHintsUnlocked]);
+  }, [timeLeft, isHintsUnlocked, isSessionMode]);
 
   // Handle Unlock Hint
   const handleUnlockHint = () => {
@@ -271,14 +242,32 @@ export default function ProblemPage() {
     </div>
   ) : (
     <div className="flex flex-col gap-4 min-h-0 h-full">
-      {/* 1. Timer (Replaces static status) */}
+      {/* Timer */}
       <InterviewTimer
         timeLeft={timeLeft}
         setTimeLeft={setTimeLeft}
-        totalTime={durationMinutes * 60}
+        totalTime={isSessionMode ? totalTime : 30 * 60}
       />
 
-      {/* 2. Focus Areas Summary */}
+      {/* Problem Timer (count-up) */}
+      <ProblemTimer problemTime={problemTime} />
+
+      {/* Session Progress (Session Mode Only) */}
+      {isSessionMode && sessionData && (
+        <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-4 flex flex-col gap-2 flex-shrink-0">
+          <div className="flex items-center justify-between">
+            <h3 className="font-semibold text-sm">Session Progress</h3>
+            <Badge variant="secondary" className="text-xs">
+              Problem {currentProblemIndex + 1} of {sessionData.problem_count}
+            </Badge>
+          </div>
+          <div className="text-xs text-muted-foreground">
+            {sessionData.problems.filter((p) => p.status === "ready").length} / {sessionData.problem_count} Ready
+          </div>
+        </div>
+      )}
+
+      {/* Focus Areas Summary */}
       <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-4 flex flex-col gap-2 flex-shrink-0">
         <div className="flex items-center justify-between">
           <h3 className="font-semibold text-sm">Focus Areas</h3>
@@ -288,15 +277,41 @@ export default function ProblemPage() {
         </div>
       </div>
 
-      {/* 3. Generate Button */}
-      <Button
-        className="w-full h-10 font-semibold flex-shrink-0"
-        onClick={() => router.push('/start')}
-      >
-        Generate New Problem
-      </Button>
+      {/* Navigation Buttons (Session Mode) or Generate Button (Standalone) */}
+      {isSessionMode && sessionData ? (
+        <div className="flex gap-2 flex-shrink-0">
+          <Button
+            variant="outline"
+            className="flex-1"
+            onClick={handlePreviousProblem}
+            disabled={currentProblemIndex === 0}
+          >
+            <ChevronLeftIcon className="h-4 w-4 mr-1" />
+            Previous
+          </Button>
+          <Button
+            variant="outline"
+            className="flex-1"
+            onClick={handleNextProblem}
+            disabled={
+              currentProblemIndex >= sessionData.problems.length - 1 ||
+              sessionData.problems[currentProblemIndex + 1]?.status !== "ready"
+            }
+          >
+            Next
+            <ChevronRightIcon className="h-4 w-4 ml-1" />
+          </Button>
+        </div>
+      ) : (
+        <Button
+          className="w-full h-10 font-semibold flex-shrink-0"
+          onClick={() => router.push('/start')}
+        >
+          Generate New Problem
+        </Button>
+      )}
 
-      {/* 4. Generated Content (Scrollable) */}
+      {/* Generated Content (Scrollable) */}
       <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-4 space-y-6 flex-1 overflow-auto min-h-0 relative">
         <div className="space-y-2">
           <h2 className="font-bold text-lg font-comic">{currentProblem.title}</h2>
@@ -307,8 +322,8 @@ export default function ProblemPage() {
           <ReactMarkdown>{descriptionDisplay}</ReactMarkdown>
         </div>
 
-        {/* Hints Section */}
-        {hintsDisplay && (
+        {/* Hints Section (Standalone Mode Only) */}
+        {!isSessionMode && hintsDisplay && (
           <div className="mt-8 pt-6 border-t border-border">
             <h3 className="font-semibold text-sm text-muted-foreground mb-3 flex items-center gap-2 uppercase tracking-wider">
               {isHintsUnlocked ? <UnlockIcon className="w-4 h-4 text-success" /> : <LockIcon className="w-4 h-4 text-warning" />}
@@ -321,7 +336,6 @@ export default function ProblemPage() {
               </div>
             ) : (
               <div className="group relative overflow-hidden rounded-md border bg-muted/30 p-8 text-center transition-all hover:bg-muted/50">
-                {/* Blur overlay effect */}
                 <div className="absolute inset-0 flex items-center justify-center backdrop-blur-[1px] bg-background/50 pointer-events-none" />
 
                 <div className="relative z-10 flex flex-col items-center gap-4">
@@ -351,11 +365,13 @@ export default function ProblemPage() {
         )}
       </div>
 
-      {/* 5. Difficulty Buttons */}
-      <div className="flex gap-2 flex-shrink-0 mt-auto pt-2">
-        <Button variant="outline" className="flex-1">Make Easier</Button>
-        <Button variant="outline" className="flex-1">Make Harder</Button>
-      </div>
+      {/* Difficulty Buttons (Standalone Mode Only) */}
+      {!isSessionMode && (
+        <div className="flex gap-2 flex-shrink-0 mt-auto pt-2">
+          <Button variant="outline" className="flex-1">Make Easier</Button>
+          <Button variant="outline" className="flex-1">Make Harder</Button>
+        </div>
+      )}
     </div>
   );
 
@@ -365,7 +381,7 @@ export default function ProblemPage() {
       language={language}
       setLanguage={setLanguage}
       code={code || ""}
-      setCode={setCode}
+      setCode={saveCode}
       onRun={handleRun}
       isRunning={isRunning}
       onSubmit={handleSubmit}

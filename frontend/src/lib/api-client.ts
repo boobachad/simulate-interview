@@ -269,5 +269,14 @@ export const apiClient = {
         `/api/sessions/${sessionId}/next/${currentNumber}`
       );
     },
+
+    complete: async (sessionId: SessionID): Promise<{ success: boolean }> => {
+      return fetchWithRetry<{ success: boolean }>(
+        `/api/sessions/${sessionId}/complete`,
+        {
+          method: "POST",
+        }
+      );
+    },
   },
 };

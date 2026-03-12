@@ -4,14 +4,19 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ClockIcon, Loader2Icon } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ClockIcon, Loader2Icon, PlayIcon, ListIcon } from "lucide-react";
 import { InterviewSplitLayout } from "@/components/InterviewSplitLayout";
 import { useInterviewStore } from "@/lib/store";
 import { focusAreasApi, problemsApi, executionApi } from "@/lib/api";
+import { apiClient } from "@/lib/api-client";
 import { toast } from "sonner";
 import { CodeEditor } from "@/components/CodeEditor";
 import { TestCasesView } from "@/components/TestCasesView";
 import { Navbar } from "@/components/Navbar";
+import { FocusAreaSelector } from "@/components/FocusAreaSelector";
+import type { FocusSelection, SessionCreateRequest } from "@/types/api";
+import { isSingleTopicMode, isMultipleTopicsMode } from "@/types/api";
 
 
 const CPP_BOILERPLATE = `#include <bits/stdc++.h>
@@ -126,6 +131,9 @@ export default function StartPage() {
   const router = useRouter();
   const { focusAreas, setFocusAreas, selectedFocusAreas, toggleFocusArea, setCurrentProblem } = useInterviewStore();
   const [isGenerating, setIsGenerating] = useState(false);
+  const [mode, setMode] = useState<"playground" | "session">("playground");
+  const [focusSelection, setFocusSelection] = useState<FocusSelection>({ mode: "all" });
+  const [problemCount, setProblemCount] = useState(5);
 
 
   // Editor & Execution State
@@ -159,6 +167,14 @@ export default function StartPage() {
   };
 
   const handleGenerate = async () => {
+    if (mode === "session") {
+      await handleCreateSession();
+    } else {
+      await handleGenerateSingleProblem();
+    }
+  };
+
+  const handleGenerateSingleProblem = async () => {
     setIsGenerating(true);
 
     try {
@@ -168,6 +184,51 @@ export default function StartPage() {
     } catch (error) {
       console.error(error);
       toast.error("Failed to generate problem");
+      setIsGenerating(false);
+    }
+  };
+
+  const handleCreateSession = async () => {
+    setIsGenerating(true);
+
+    try {
+      let request: SessionCreateRequest;
+
+      if (focusSelection.mode === "all") {
+        request = { focus_mode: "all", problem_count: problemCount };
+      } else if (isSingleTopicMode(focusSelection)) {
+        if (!focusSelection.topic) {
+          toast.error("Please select a topic");
+          setIsGenerating(false);
+          return;
+        }
+        request = {
+          focus_mode: "single",
+          focus_topic: focusSelection.topic,
+          problem_count: problemCount,
+        };
+      } else if (isMultipleTopicsMode(focusSelection)) {
+        if (focusSelection.topics.length < 2 || focusSelection.topics.length > 10) {
+          toast.error("Please select 2-10 topics");
+          setIsGenerating(false);
+          return;
+        }
+        request = {
+          focus_mode: "multiple",
+          focus_topics: focusSelection.topics,
+          problem_count: problemCount,
+        };
+      } else {
+        toast.error("Invalid focus selection");
+        setIsGenerating(false);
+        return;
+      }
+
+      const response = await apiClient.sessions.create(request);
+      router.push(`/problem/${response.first_problem.id}?session=${response.session_id}`);
+    } catch (error) {
+      console.error(error);
+      toast.error("Failed to create session");
       setIsGenerating(false);
     }
   };
@@ -218,61 +279,109 @@ export default function StartPage() {
   // --- Left Content: Sidebar ---
   const LeftContent = (
     <div className="flex flex-col gap-4 min-h-0 h-full">
-      {/* 1. Status Indicator */}
+      {/* Mode Toggle */}
+      <Tabs value={mode} onValueChange={(v) => setMode(v as "playground" | "session")} className="flex-shrink-0">
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="playground" className="flex items-center gap-2">
+            <PlayIcon className="h-4 w-4" />
+            Playground
+          </TabsTrigger>
+          <TabsTrigger value="session" className="flex items-center gap-2">
+            <ListIcon className="h-4 w-4" />
+            Session
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
+
+      {/* Status Indicator */}
       <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-4 flex items-center gap-2 flex-shrink-0">
         {isGenerating ? <Loader2Icon className="h-4 w-4 animate-spin" /> : <ClockIcon className="h-4 w-4 text-muted-foreground" />}
         <span className="text-sm font-medium">
-          {isGenerating ? "Generating problem..." : "Ready to generate"}
+          {isGenerating ? (mode === "session" ? "Creating session..." : "Generating problem...") : "Ready to generate"}
         </span>
       </div>
 
-      {/* 2. Focus Area Selector */}
-      <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-4 flex flex-col gap-4 flex-shrink-0">
-        <div className="flex items-center justify-between">
-          <h3 className="font-semibold text-sm">Focus Areas</h3>
-          <Badge variant="secondary" className="text-xs">
-            {selectedFocusAreas.length === 0 ? "Random" : `${selectedFocusAreas.length} selected`}
-          </Badge>
-        </div>
-
-        <div className="flex flex-wrap gap-2 content-start">
-          <div
-            className={`cursor-pointer px-3 py-1 rounded-full text-xs font-medium border transition-colors ${selectedFocusAreas.length === 0 ? "bg-primary text-primary-foreground border-primary" : "bg-secondary text-secondary-foreground hover:bg-secondary/80"}`}
-            onClick={() => setFocusAreas(focusAreas)}
-          >
-            All (Random)
-          </div>
-          {focusAreas.map(area => (
-            <div
-              key={area.id}
-              onClick={() => toggleFocusArea(area.slug)}
-              className={`cursor-pointer px-3 py-1 rounded-full text-xs font-medium border transition-colors ${selectedFocusAreas.includes(area.slug)
-                ? "bg-primary text-primary-foreground border-primary"
-                : "bg-background text-foreground border-input hover:bg-accent hover:text-accent-foreground"
-                }`}
+      {/* Focus Area Selection */}
+      {mode === "session" ? (
+        <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-4 flex-1 min-h-0 overflow-y-auto">
+          <FocusAreaSelector
+            selection={focusSelection}
+            onSelectionChange={setFocusSelection}
+          />
+          
+          {/* Problem Count Selector */}
+          <div className="mt-4 pt-4 border-t">
+            <label htmlFor="problem-count" className="text-sm font-semibold mb-2 block">
+              Problem Count
+            </label>
+            <select
+              id="problem-count"
+              value={problemCount}
+              onChange={(e) => setProblemCount(Number(e.target.value))}
+              className="w-full px-3 py-2 rounded-md border bg-background text-sm"
             >
-              {area.name}
-            </div>
-          ))}
+              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
+                <option key={n} value={n}>
+                  {n} {n === 1 ? "problem" : "problems"}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-4 flex flex-col gap-4 flex-shrink-0">
+          <div className="flex items-center justify-between">
+            <h3 className="font-semibold text-sm">Focus Areas</h3>
+            <Badge variant="secondary" className="text-xs">
+              {selectedFocusAreas.length === 0 ? "Random" : `${selectedFocusAreas.length} selected`}
+            </Badge>
+          </div>
 
-      {/* 3. Generate Button */}
+          <div className="flex flex-wrap gap-2 content-start">
+            <div
+              className={`cursor-pointer px-3 py-1 rounded-full text-xs font-medium border transition-colors ${selectedFocusAreas.length === 0 ? "bg-primary text-primary-foreground border-primary" : "bg-secondary text-secondary-foreground hover:bg-secondary/80"}`}
+              onClick={() => setFocusAreas(focusAreas)}
+            >
+              All (Random)
+            </div>
+            {focusAreas.map(area => (
+              <div
+                key={area.id}
+                onClick={() => toggleFocusArea(area.slug)}
+                className={`cursor-pointer px-3 py-1 rounded-full text-xs font-medium border transition-colors ${selectedFocusAreas.includes(area.slug)
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "bg-background text-foreground border-input hover:bg-accent hover:text-accent-foreground"
+                  }`}
+              >
+                {area.name}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Generate Button */}
       <Button
         className="w-full h-10 font-semibold flex-shrink-0"
         onClick={handleGenerate}
         disabled={isGenerating}
       >
-        {isGenerating ? "Generating New Problem..." : "Generate New Problem"}
+        {isGenerating 
+          ? (mode === "session" ? "Creating Session..." : "Generating Problem...") 
+          : (mode === "session" ? "Start Session" : "Generate Problem")}
       </Button>
 
-      <div className="flex-1 min-h-0"></div>
+      {mode === "playground" && (
+        <>
+          <div className="flex-1 min-h-0"></div>
 
-      {/* 5. Difficulty Buttons */}
-      <div className="flex gap-2 flex-shrink-0 mt-auto">
-        <Button variant="outline" className="flex-1" disabled>Make Easier</Button>
-        <Button variant="outline" className="flex-1" disabled>Make Harder</Button>
-      </div>
+          {/* Difficulty Buttons */}
+          <div className="flex gap-2 flex-shrink-0 mt-auto">
+            <Button variant="outline" className="flex-1" disabled>Make Easier</Button>
+            <Button variant="outline" className="flex-1" disabled>Make Harder</Button>
+          </div>
+        </>
+      )}
     </div>
   );
 
