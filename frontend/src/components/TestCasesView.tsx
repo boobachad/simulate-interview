@@ -48,13 +48,13 @@ export function TestCasesView({ testCases, results, customTestCases, setCustomTe
         return (
             <div className="h-full flex flex-col bg-background">
                 <div className="border-b px-4 h-9 flex items-center bg-muted/20">
-                    <div className="flex items-center gap-2 text-red-500 font-medium text-sm">
+                    <div className="flex items-center gap-2 text-destructive font-medium text-sm">
                         <AlertTriangleIcon className="w-4 h-4" />
                         Execution Error
                     </div>
                 </div>
                 <div className="flex-1 p-4 overflow-auto">
-                    <div className="rounded-md border border-red-500/20 bg-red-500/10 p-4 font-mono text-sm whitespace-pre-wrap text-red-700 dark:text-red-400">
+                    <div className="rounded-md border border-destructive/20 bg-destructive/10 p-4 font-mono text-sm whitespace-pre-wrap text-destructive">
                         {error}
                     </div>
                 </div>
@@ -81,7 +81,7 @@ export function TestCasesView({ testCases, results, customTestCases, setCustomTe
                         {testCases.map((_, index) => {
                             const result = results ? results.find(r => r.case_number === index + 1) : null;
                             const statusColor = result
-                                ? (result.passed ? "text-green-600" : "text-red-600")
+                                ? (result.passed ? "text-success" : "text-destructive")
                                 : "text-muted-foreground";
 
                             return (
@@ -96,7 +96,7 @@ export function TestCasesView({ testCases, results, customTestCases, setCustomTe
                                 >
                                     Case {index + 1}
                                     {result && (
-                                        <span className={cn("ml-2 w-2 h-2 rounded-full", result.passed ? 'bg-green-500' : 'bg-red-500')} />
+                                        <span className={cn("ml-2 w-2 h-2 rounded-full", result.passed ? 'bg-success' : 'bg-destructive')} />
                                     )}
                                 </TabsTrigger>
                             );
@@ -177,7 +177,7 @@ export function TestCasesView({ testCases, results, customTestCases, setCustomTe
                                         </div>
                                         <div className={cn(
                                             "rounded-md border p-4 font-mono text-sm whitespace-pre-wrap",
-                                            result.passed ? "bg-green-500/10 border-green-500/20" : "bg-red-500/10 border-red-500/20"
+                                            result.passed ? "bg-success/10 border-success/20" : "bg-destructive/10 border-destructive/20"
                                         )}>
                                             {result.actual_output || result.error || "No output"}
                                         </div>

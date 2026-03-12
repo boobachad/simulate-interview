@@ -21,7 +21,7 @@ import (
 
 // LLMProvider interface for problem generation
 type LLMProvider interface {
-	GenerateProblem(ctx context.Context, focusAreas []string) (*models.ProblemGenerationResponse, error)
+	GenerateProblem(ctx context.Context, focusAreas []string, personalizationContext string) (*models.ProblemGenerationResponse, error)
 	GenerateProblemStream(ctx context.Context, focusAreas []string, streamChan chan string) error
 }
 
@@ -70,7 +70,7 @@ func NewLLMProvider() (LLMProvider, error) {
 }
 
 // GenerateProblem generates a coding problem using Gemini API
-func (g *GeminiProvider) GenerateProblem(ctx context.Context, focusAreas []string) (*models.ProblemGenerationResponse, error) {
+func (g *GeminiProvider) GenerateProblem(ctx context.Context, focusAreas []string, personalizationContext string) (*models.ProblemGenerationResponse, error) {
 	client, err := genai.NewClient(ctx, option.WithAPIKey(g.apiKey))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Gemini client: %w", err)
@@ -81,7 +81,7 @@ func (g *GeminiProvider) GenerateProblem(ctx context.Context, focusAreas []strin
 	model.SetTemperature(0.9)
 
 	guidance := fetchFocusAreaGuidance(focusAreas)
-	prompt := buildPrompt(focusAreas, guidance)
+	prompt := buildPrompt(focusAreas, guidance, personalizationContext)
 
 	log.Printf("Generating problem with Gemini for focus areas: %v", focusAreas)
 
@@ -121,7 +121,7 @@ func (g *GeminiProvider) GenerateProblemStream(ctx context.Context, focusAreas [
 	model.SetTemperature(0.9)
 
 	guidance := fetchFocusAreaGuidance(focusAreas)
-	prompt := buildPrompt(focusAreas, guidance)
+	prompt := buildPrompt(focusAreas, guidance, "")
 
 	log.Printf("Streaming problem generation with Gemini for focus areas: %v", focusAreas)
 
@@ -146,9 +146,9 @@ func (g *GeminiProvider) GenerateProblemStream(ctx context.Context, focusAreas [
 }
 
 // GenerateProblem generates a coding problem using OpenRouter API
-func (o *OpenRouterProvider) GenerateProblem(ctx context.Context, focusAreas []string) (*models.ProblemGenerationResponse, error) {
+func (o *OpenRouterProvider) GenerateProblem(ctx context.Context, focusAreas []string, personalizationContext string) (*models.ProblemGenerationResponse, error) {
 	guidance := fetchFocusAreaGuidance(focusAreas)
-	prompt := buildPrompt(focusAreas, guidance)
+	prompt := buildPrompt(focusAreas, guidance, personalizationContext)
 
 	log.Printf("Generating problem with OpenRouter for focus areas: %v", focusAreas)
 
@@ -191,7 +191,7 @@ func (o *OpenRouterProvider) GenerateProblem(ctx context.Context, focusAreas []s
 		if resp.StatusCode == http.StatusUnauthorized {
 			log.Printf("OpenRouter API returned 401 Unauthorized. Falling back to MockProvider.")
 			mockProvider := &MockProvider{}
-			return mockProvider.GenerateProblem(ctx, focusAreas)
+			return mockProvider.GenerateProblem(ctx, focusAreas, personalizationContext)
 		}
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
@@ -229,7 +229,7 @@ func (o *OpenRouterProvider) GenerateProblem(ctx context.Context, focusAreas []s
 // GenerateProblemStream generates a coding problem using OpenRouter API with streaming
 func (o *OpenRouterProvider) GenerateProblemStream(ctx context.Context, focusAreas []string, streamChan chan string) error {
 	guidance := fetchFocusAreaGuidance(focusAreas)
-	prompt := buildPrompt(focusAreas, guidance)
+	prompt := buildPrompt(focusAreas, guidance, "")
 
 	log.Printf("Streaming problem generation with OpenRouter for focus areas: %v", focusAreas)
 
@@ -319,8 +319,19 @@ func (o *OpenRouterProvider) GenerateProblemStream(ctx context.Context, focusAre
 }
 
 // buildPrompt creates the prompt for problem generation
-func buildPrompt(focusAreas []string, guidance string) string {
+func buildPrompt(focusAreas []string, guidance string, personalizationContext string) string {
 	focusStr := strings.Join(focusAreas, ", ")
+
+	// Add personalization context if provided
+	personalizationSection := ""
+	if personalizationContext != "" {
+		personalizationSection = fmt.Sprintf(`
+
+USER PERFORMANCE CONTEXT:
+%s
+
+Use this context to tailor the problem difficulty and focus on areas where the user needs improvement.`, personalizationContext)
+	}
 
 	// Use provided guidance if available
 	focusRequirements := ""
@@ -362,8 +373,7 @@ The problem you generate MUST satisfy the focus area requirements below:
 	}
 
 	return fmt.Sprintf(`Generate a competitive programming problem.
-
-%s
+%s%s
 
 You must respond with ONLY valid JSON in the following exact format (no markdown, no code blocks, just raw JSON):
 
@@ -399,7 +409,7 @@ You must respond with ONLY valid JSON in the following exact format (no markdown
 - Use proper input/output format that can be read from stdin and written to stdout
 - Make the problem challenging but solvable in 10-15 minutes
 - Include clear constraints in the description
-- **CRITICAL**: Append a '## Solution Hints' section at the very end of the 'description'. Checkpoints or algorithmic hints to help a stuck user, but DO NOT give the full code.`, focusRequirements, focusStr)
+- **CRITICAL**: Append a '## Solution Hints' section at the very end of the 'description'. Checkpoints or algorithmic hints to help a stuck user, but DO NOT give the full code.`, personalizationSection, focusRequirements, focusStr)
 }
 
 // fetchFocusAreaGuidance fetches and combines guidance for multiple focus areas
@@ -428,7 +438,7 @@ func fetchFocusAreaGuidance(focusAreas []string) string {
 type MockProvider struct{}
 
 // GenerateProblem returns a mock problem from the mock_problem.json file
-func (m *MockProvider) GenerateProblem(ctx context.Context, focusAreas []string) (*models.ProblemGenerationResponse, error) {
+func (m *MockProvider) GenerateProblem(ctx context.Context, focusAreas []string, personalizationContext string) (*models.ProblemGenerationResponse, error) {
 	log.Println("Using mock problem (API keys not configured)")
 
 	// Read mock problem from file

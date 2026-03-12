@@ -178,13 +178,12 @@ export default function Onboarding() {
                     </div>
                   </div>
 
-                  {/* Top Skills */}
+                  {/* All Skills */}
                   <div className="mt-4">
-                    <h4 className="font-semibold text-content-primary mb-2">Top Skills:</h4>
+                    <h4 className="font-semibold text-content-primary mb-2">All Skills:</h4>
                     <div className="flex flex-wrap gap-2">
                       {Object.entries(userProfile.leetcode_stats.skills)
                         .sort((a, b) => b[1].problem_count - a[1].problem_count)
-                        .slice(0, 8)
                         .map(([tag, skill]) => (
                           <span
                             key={tag}
@@ -202,7 +201,7 @@ export default function Onboarding() {
               {userProfile.codeforces_stats && (
                 <div className="bg-surface-elevated rounded-lg p-6 border border-border-primary">
                   <h3 className="text-xl font-bold text-content-primary mb-4">Codeforces Stats</h3>
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
                     <div className="text-center">
                       <div className="text-3xl font-bold text-primary">{userProfile.codeforces_stats.rating}</div>
                       <div className="text-sm text-content-secondary">Current Rating</div>
@@ -215,6 +214,10 @@ export default function Onboarding() {
                       <div className="text-3xl font-bold text-success">{userProfile.codeforces_stats.problems_solved}</div>
                       <div className="text-sm text-content-secondary">Problems Solved</div>
                     </div>
+                    <div className="text-center">
+                      <div className="text-3xl font-bold text-info">{userProfile.codeforces_stats.contest_count}</div>
+                      <div className="text-sm text-content-secondary">Contests</div>
+                    </div>
                   </div>
 
                   {/* Rank */}
@@ -224,14 +227,13 @@ export default function Onboarding() {
                     </span>
                   </div>
 
-                  {/* Top Tags */}
+                  {/* All Tags */}
                   {Object.keys(userProfile.codeforces_stats.tags).length > 0 && (
                     <div className="mt-4">
-                      <h4 className="font-semibold text-content-primary mb-2">Top Tags:</h4>
+                      <h4 className="font-semibold text-content-primary mb-2">All Tags:</h4>
                       <div className="flex flex-wrap gap-2">
                         {Object.entries(userProfile.codeforces_stats.tags)
                           .sort((a, b) => b[1] - a[1])
-                          .slice(0, 8)
                           .map(([tag, count]) => (
                             <span
                               key={tag}

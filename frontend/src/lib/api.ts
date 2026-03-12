@@ -10,6 +10,24 @@ const api = axios.create({
   },
 });
 
+// Branded types for domain IDs
+export type UserID = string & { readonly __brand: 'UserID' };
+export type SessionID = string & { readonly __brand: 'SessionID' };
+export type ProblemID = string & { readonly __brand: 'ProblemID' };
+
+// Type guards
+export function isUserID(value: string): value is UserID {
+  return value.length > 0;
+}
+
+export function isSessionID(value: string): value is SessionID {
+  return value.length > 0;
+}
+
+export function isProblemID(value: string): value is ProblemID {
+  return value.length > 0;
+}
+
 export const focusAreasApi = {
   getAll: async (): Promise<FocusArea[]> => {
     const response = await api.get('/focus-areas');
@@ -37,11 +55,24 @@ export const problemsApi = {
   },
 };
 
+// Discriminated union for test case
+export interface TestCase {
+  input: string;
+  expected_output: string;
+  explanation?: string;
+}
+
 export const executionApi = {
-  execute: async (code: string, problemId: string, language: string = "cpp", customCases?: any[], mode: "run" | "submit" = "run"): Promise<ExecutionResponse> => {
+  execute: async (
+    code: string,
+    problemID: string,
+    language: string = "cpp",
+    customCases?: TestCase[],
+    mode: "run" | "submit" = "run"
+  ): Promise<ExecutionResponse> => {
     const response = await api.post('/execute', {
       code,
-      problem_id: problemId,
+      problem_id: problemID,
       language,
       custom_cases: customCases || [],
       mode,
@@ -73,6 +104,7 @@ export interface CodeforcesStats {
   rank: string;
   max_rank: string;
   problems_solved: number;
+  contest_count: number;
   tags: Record<string, number>;
 }
 

@@ -69,9 +69,6 @@ func main() {
 
 		// Code execution
 		api.POST("/execute", handlers.ExecuteCode)
-
-		// User stats
-		api.POST("/stats", handlers.GetUserStats)
 	}
 
 	// Health check
