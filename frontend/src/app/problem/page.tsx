@@ -5,8 +5,8 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { PlusIcon, Loader2Icon, FilterIcon } from "lucide-react";
-import { problemsApi } from "@/lib/api";
-import { Problem } from "@/lib/store";
+import { api } from "@/lib/api";
+import type { Problem } from "@/lib/api";
 import { Navbar } from "@/components/Navbar";
 
 export default function ProblemsIndexPage() {
@@ -22,7 +22,7 @@ export default function ProblemsIndexPage() {
     const loadProblems = async () => {
         setIsLoading(true);
         try {
-            const data = await problemsApi.getAll(selectedFocusArea || undefined);
+            const data = await api.problems.getAll(selectedFocusArea || undefined);
             setProblems(data);
         } catch (error) {
             console.error("Failed to load problems:", error);
@@ -81,7 +81,7 @@ export default function ProblemsIndexPage() {
                                 >
                                     <div className="flex justify-between items-start mb-4">
                                         <Badge variant="secondary" className="text-xs">
-                                            {problem.focus_area?.name || "General"}
+                                            {problem.focus_area || "General"}
                                         </Badge>
                                         {/* <span className="text-xs text-muted-foreground">
                     {problem.created_at ? formatDistanceToNow(new Date(problem.created_at), { addSuffix: true }) : ''}

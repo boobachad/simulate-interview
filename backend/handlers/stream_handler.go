@@ -127,7 +127,7 @@ process_response:
 	var existingProblem models.Problem
 	if result := database.DB.Where("title = ?", problemResponse.Title).First(&existingProblem); result.Error == nil {
 		log.Printf("Found existing problem with title '%s', reusing ID: %s", existingProblem.Title, existingProblem.ID)
-		database.DB.Preload("FocusArea").First(&existingProblem, "id = ?", existingProblem.ID)
+		database.DB.First(&existingProblem, "id = ?", existingProblem.ID)
 
 		problemJSON, _ := json.Marshal(existingProblem)
 		completionEvent := fmt.Sprintf("event: complete\ndata: %s\n\n", string(problemJSON))
@@ -137,13 +137,15 @@ process_response:
 	}
 
 	// Save problem to database
+	focusAreaTopic := focusArea.Slug
 	problem := models.Problem{
-		ID:          uuid.New(),
-		Title:       problemResponse.Title,
-		Description: problemResponse.Description,
-		FocusAreaID: focusArea.ID,
-		SampleCases: problemResponse.SampleCases,
-		HiddenCases: problemResponse.HiddenCases,
+		ID:             uuid.New(),
+		Title:          problemResponse.Title,
+		Description:    problemResponse.Description,
+		Rating:         problemResponse.Rating,
+		FocusAreaTopic: &focusAreaTopic,
+		SampleCases:    problemResponse.SampleCases,
+		HiddenCases:    problemResponse.HiddenCases,
 	}
 
 	result = database.DB.Create(&problem)
@@ -154,8 +156,8 @@ process_response:
 		return
 	}
 
-	// Load the focus area relationship
-	database.DB.Preload("FocusArea").First(&problem, "id = ?", problem.ID)
+	// Reload problem from database
+	database.DB.First(&problem, "id = ?", problem.ID)
 
 	log.Printf("Problem generated successfully: %s", problem.Title)
 

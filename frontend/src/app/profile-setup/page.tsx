@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Field, FieldError, FieldLabel, FieldDescription } from "@/components/ui/field";
 import { Loader2Icon, UserIcon } from "lucide-react";
-import { apiClient } from "@/lib/api-client";
+import { api } from "@/lib/api";
 
 const profileSchema = z.object({
   leetcode_username: z.string().min(1, "LeetCode username is required"),
@@ -29,7 +29,7 @@ export default function ProfileSetupPage() {
 
   const onSubmit = async (data: z.infer<typeof profileSchema>) => {
     try {
-      await apiClient.profile.setup({
+      await api.profile.setup({
         leetcode_username: data.leetcode_username.trim(),
         codeforces_username: data.codeforces_username.trim(),
       });

@@ -1,5 +1,5 @@
 import Dexie, { type EntityTable } from "dexie";
-import type { CombinedStats, UserID } from "@/types/api";
+import type { CombinedStats, UserID } from "@/lib/api";
 
 // Stats cache entry
 interface StatsCache {

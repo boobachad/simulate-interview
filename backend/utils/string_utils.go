@@ -3,6 +3,8 @@ package utils
 import (
 	"log"
 	"strings"
+
+	"github.com/google/uuid"
 )
 
 // Slugify converts a string to a slug
@@ -135,4 +137,10 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// IsValidUUID checks if a string is a valid UUID
+func IsValidUUID(s string) bool {
+	_, err := uuid.Parse(s)
+	return err == nil
 }

@@ -1,9 +1,13 @@
 package handlers
 
 import (
+	"encoding/json"
+	"log"
 	"net/http"
 	"strconv"
+	"strings"
 
+	"github.com/boobachad/simulate-interview/backend/models"
 	"github.com/boobachad/simulate-interview/backend/services"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -107,11 +111,26 @@ func (h *SessionHandler) CreateSession(c *gin.Context) {
 		return
 	}
 
+	if len(sessionData.Problems) == 0 {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Session created without problems"})
+		return
+	}
+
+	var createdAt string
+	if sessionData.Problems[0].GeneratedAt != nil {
+		createdAt = sessionData.Problems[0].GeneratedAt.Format("2006-01-02T15:04:05Z07:00")
+	} else {
+		createdAt = ""
+	}
+
 	problemMap := map[string]interface{}{
+		"id":           sessionData.Problems[0].ID.String(),
 		"title":        firstProblem.Title,
 		"description":  firstProblem.Description,
 		"focus_area":   firstProblem.FocusArea,
+		"rating":       firstProblem.Rating,
 		"sample_cases": firstProblem.SampleCases,
+		"created_at":   createdAt,
 	}
 
 	c.JSON(http.StatusOK, CreateSessionResponse{
@@ -152,7 +171,58 @@ func (h *SessionHandler) GetSession(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, sessionData)
+	// Transform session problems to include parsed problem data
+	type SessionProblemResponse struct {
+		ProblemNumber int                     `json:"problem_number"`
+		Status        string                  `json:"status"`
+		Problem       *map[string]interface{} `json:"problem,omitempty"`
+		ErrorMessage  *string                 `json:"error_message,omitempty"`
+	}
+
+	problems := make([]SessionProblemResponse, len(sessionData.Problems))
+	for i, sp := range sessionData.Problems {
+		problems[i] = SessionProblemResponse{
+			ProblemNumber: sp.ProblemNumber,
+			Status:        sp.Status,
+			ErrorMessage:  sp.ErrorMessage,
+		}
+
+		if sp.Status == "ready" && len(sp.ProblemData) > 0 {
+			var problemResponse models.ProblemGenerationResponse
+			if err := json.Unmarshal(sp.ProblemData, &problemResponse); err != nil {
+				log.Printf("Failed to unmarshal session problem ID=%s GeneratedAt=%v: %v", sp.ID, sp.GeneratedAt, err)
+			} else {
+				var createdAt string
+				if sp.GeneratedAt != nil {
+					createdAt = sp.GeneratedAt.Format("2006-01-02T15:04:05Z07:00")
+				}
+
+				problemMap := map[string]interface{}{
+					"id":           sp.ID.String(),
+					"title":        problemResponse.Title,
+					"description":  problemResponse.Description,
+					"focus_area":   problemResponse.FocusArea,
+					"rating":       problemResponse.Rating,
+					"sample_cases": problemResponse.SampleCases,
+					"created_at":   createdAt,
+				}
+				problems[i].Problem = &problemMap
+			}
+		}
+	}
+
+	response := gin.H{
+		"id":                    sessionData.Session.ID.String(),
+		"problem_count":         sessionData.Session.ProblemCount,
+		"focus_mode":            sessionData.Session.FocusMode,
+		"focus_topic":           sessionData.Session.FocusTopic,
+		"focus_topics":          sessionData.Session.FocusTopics,
+		"current_problem_number": sessionData.Session.CurrentProblemNumber,
+		"status":                sessionData.Session.Status,
+		"problems":              problems,
+	}
+
+	c.JSON(http.StatusOK, response)
 }
 
 // GetNextProblem checks if next problem is ready and returns it
@@ -213,4 +283,84 @@ func (h *SessionHandler) GetNextProblem(c *gin.Context) {
 		Ready:   true,
 		Problem: problemMap,
 	})
+}
+
+// CompleteSession marks session as completed
+func (h *SessionHandler) CompleteSession(c *gin.Context) {
+	userID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Authentication required"})
+		return
+	}
+
+	sessionIDStr := c.Param("session_id")
+	sessionID, err := uuid.Parse(sessionIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid session ID"})
+		return
+	}
+
+	sessionData, err := h.sessionService.GetSession(c.Request.Context(), sessionID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Session not found"})
+		return
+	}
+
+	uid, ok := userID.(uuid.UUID)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid user ID"})
+		return
+	}
+
+	if sessionData.Session.UserID != uid {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
+		return
+	}
+
+	// Validate all problems are ready before allowing completion
+	readyCount := 0
+	for _, p := range sessionData.Problems {
+		if p.Status == "ready" {
+			readyCount++
+		}
+	}
+
+	if readyCount < sessionData.Session.ProblemCount {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Cannot complete session: not all problems are ready",
+			"ready": readyCount,
+			"total": sessionData.Session.ProblemCount,
+		})
+		return
+	}
+
+	if err := h.sessionService.CompleteSession(c.Request.Context(), sessionID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to complete session"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Session completed successfully"})
+}
+
+// ListActiveSessions returns user's active sessions
+func (h *SessionHandler) ListActiveSessions(c *gin.Context) {
+	userID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Authentication required"})
+		return
+	}
+
+	uid, ok := userID.(uuid.UUID)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid user ID"})
+		return
+	}
+
+	sessions, err := h.sessionService.ListActiveSessions(c.Request.Context(), uid)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to list sessions"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"sessions": sessions})
 }

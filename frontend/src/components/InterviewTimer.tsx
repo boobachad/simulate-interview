@@ -13,8 +13,9 @@ export function InterviewTimer({
   timeLeft,
   totalTime = 30 * 60,
 }: InterviewTimerProps) {
-  const minutes = Math.floor(timeLeft / 60);
-  const seconds = timeLeft % 60;
+  const displayTime = Math.max(0, timeLeft);
+  const minutes = Math.floor(displayTime / 60);
+  const seconds = displayTime % 60;
   const formattedTime = `${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
 
   const isUrgent = timeLeft < 5 * 60;

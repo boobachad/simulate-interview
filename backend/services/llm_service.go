@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	"github.com/boobachad/simulate-interview/backend/config"
-	"github.com/boobachad/simulate-interview/backend/database"
 	"github.com/boobachad/simulate-interview/backend/models"
 	"github.com/boobachad/simulate-interview/backend/utils"
 	"github.com/google/generative-ai-go/genai"
@@ -21,7 +20,7 @@ import (
 
 // LLMProvider interface for problem generation
 type LLMProvider interface {
-	GenerateProblem(ctx context.Context, focusAreas []string, personalizationContext string) (*models.ProblemGenerationResponse, error)
+	GenerateProblem(ctx context.Context, focusAreas []string, personalizationContext string, targetRating *int) (*models.ProblemGenerationResponse, error)
 	GenerateProblemStream(ctx context.Context, focusAreas []string, streamChan chan string) error
 }
 
@@ -70,7 +69,7 @@ func NewLLMProvider() (LLMProvider, error) {
 }
 
 // GenerateProblem generates a coding problem using Gemini API
-func (g *GeminiProvider) GenerateProblem(ctx context.Context, focusAreas []string, personalizationContext string) (*models.ProblemGenerationResponse, error) {
+func (g *GeminiProvider) GenerateProblem(ctx context.Context, focusAreas []string, personalizationContext string, targetRating *int) (*models.ProblemGenerationResponse, error) {
 	client, err := genai.NewClient(ctx, option.WithAPIKey(g.apiKey))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Gemini client: %w", err)
@@ -81,9 +80,17 @@ func (g *GeminiProvider) GenerateProblem(ctx context.Context, focusAreas []strin
 	model.SetTemperature(0.9)
 
 	guidance := fetchFocusAreaGuidance(focusAreas)
-	prompt := buildPrompt(focusAreas, guidance, personalizationContext)
+	prompt := buildPrompt(focusAreas, guidance, personalizationContext, targetRating)
 
-	log.Printf("Generating problem with Gemini for focus areas: %v", focusAreas)
+	log.Printf("=== LLM REQUEST (Gemini) ===")
+	log.Printf("Focus Areas: %v", focusAreas)
+	log.Printf("Model: %s", g.model)
+	if targetRating != nil {
+		log.Printf("Target Rating: %d", *targetRating)
+	}
+	log.Printf("Prompt Length: %d characters", len(prompt))
+	log.Printf("Full Prompt:\n%s", prompt)
+	log.Printf("=== END LLM REQUEST ===")
 
 	resp, err := model.GenerateContent(ctx, genai.Text(prompt))
 	if err != nil {
@@ -121,9 +128,14 @@ func (g *GeminiProvider) GenerateProblemStream(ctx context.Context, focusAreas [
 	model.SetTemperature(0.9)
 
 	guidance := fetchFocusAreaGuidance(focusAreas)
-	prompt := buildPrompt(focusAreas, guidance, "")
+	prompt := buildPrompt(focusAreas, guidance, "", nil)
 
-	log.Printf("Streaming problem generation with Gemini for focus areas: %v", focusAreas)
+	log.Printf("=== LLM STREAM REQUEST (Gemini) ===")
+	log.Printf("Focus Areas: %v", focusAreas)
+	log.Printf("Model: %s", g.model)
+	log.Printf("Prompt Length: %d characters", len(prompt))
+	log.Printf("Full Prompt:\n%s", prompt)
+	log.Printf("=== END LLM STREAM REQUEST ===")
 
 	iter := model.GenerateContentStream(ctx, genai.Text(prompt))
 
@@ -146,11 +158,19 @@ func (g *GeminiProvider) GenerateProblemStream(ctx context.Context, focusAreas [
 }
 
 // GenerateProblem generates a coding problem using OpenRouter API
-func (o *OpenRouterProvider) GenerateProblem(ctx context.Context, focusAreas []string, personalizationContext string) (*models.ProblemGenerationResponse, error) {
+func (o *OpenRouterProvider) GenerateProblem(ctx context.Context, focusAreas []string, personalizationContext string, targetRating *int) (*models.ProblemGenerationResponse, error) {
 	guidance := fetchFocusAreaGuidance(focusAreas)
-	prompt := buildPrompt(focusAreas, guidance, personalizationContext)
+	prompt := buildPrompt(focusAreas, guidance, personalizationContext, targetRating)
 
-	log.Printf("Generating problem with OpenRouter for focus areas: %v", focusAreas)
+	log.Printf("=== LLM REQUEST (OpenRouter) ===")
+	log.Printf("Focus Areas: %v", focusAreas)
+	log.Printf("Model: %s", o.model)
+	if targetRating != nil {
+		log.Printf("Target Rating: %d", *targetRating)
+	}
+	log.Printf("Prompt Length: %d characters", len(prompt))
+	log.Printf("Full Prompt:\n%s", prompt)
+	log.Printf("=== END LLM REQUEST ===")
 
 	requestBody := map[string]interface{}{
 		"model": o.model,
@@ -191,7 +211,7 @@ func (o *OpenRouterProvider) GenerateProblem(ctx context.Context, focusAreas []s
 		if resp.StatusCode == http.StatusUnauthorized {
 			log.Printf("OpenRouter API returned 401 Unauthorized. Falling back to MockProvider.")
 			mockProvider := &MockProvider{}
-			return mockProvider.GenerateProblem(ctx, focusAreas, personalizationContext)
+			return mockProvider.GenerateProblem(ctx, focusAreas, personalizationContext, targetRating)
 		}
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
@@ -229,9 +249,14 @@ func (o *OpenRouterProvider) GenerateProblem(ctx context.Context, focusAreas []s
 // GenerateProblemStream generates a coding problem using OpenRouter API with streaming
 func (o *OpenRouterProvider) GenerateProblemStream(ctx context.Context, focusAreas []string, streamChan chan string) error {
 	guidance := fetchFocusAreaGuidance(focusAreas)
-	prompt := buildPrompt(focusAreas, guidance, "")
+	prompt := buildPrompt(focusAreas, guidance, "", nil)
 
-	log.Printf("Streaming problem generation with OpenRouter for focus areas: %v", focusAreas)
+	log.Printf("=== LLM STREAM REQUEST (OpenRouter) ===")
+	log.Printf("Focus Areas: %v", focusAreas)
+	log.Printf("Model: %s", o.model)
+	log.Printf("Prompt Length: %d characters", len(prompt))
+	log.Printf("Full Prompt:\n%s", prompt)
+	log.Printf("=== END LLM STREAM REQUEST ===")
 
 	requestBody := map[string]interface{}{
 		"model": o.model,
@@ -319,7 +344,7 @@ func (o *OpenRouterProvider) GenerateProblemStream(ctx context.Context, focusAre
 }
 
 // buildPrompt creates the prompt for problem generation
-func buildPrompt(focusAreas []string, guidance string, personalizationContext string) string {
+func buildPrompt(focusAreas []string, guidance string, personalizationContext string, targetRating *int) string {
 	focusStr := strings.Join(focusAreas, ", ")
 
 	// Add personalization context if provided
@@ -327,10 +352,30 @@ func buildPrompt(focusAreas []string, guidance string, personalizationContext st
 	if personalizationContext != "" {
 		personalizationSection = fmt.Sprintf(`
 
-USER PERFORMANCE CONTEXT:
+USER PERFORMANCE DATA:
 %s
 
-Use this context to tailor the problem difficulty and focus on areas where the user needs improvement.`, personalizationContext)
+RATING ASSIGNMENT RULES:
+- Use Codeforces MAX rating as primary skill indicator
+- Use LeetCode total solved + Codeforces problems solved for volume assessment
+- For selected topics: check per-topic solve counts above
+- If topic has 0 problems solved → rating = user's level - 200
+- If topic has <10 problems solved → rating = user's level ± 100
+- If topic has >50 problems solved → rating = user's level + 200
+- Contest count >50 → can handle +100 rating boost
+- Assign rating in range 800-3000 based on data above`, personalizationContext)
+	}
+
+	// Target rating override
+	targetRatingSection := ""
+	if targetRating != nil {
+		targetRatingSection = fmt.Sprintf(`
+
+TARGET RATING REQUIREMENT:
+- You MUST generate a problem with rating EXACTLY %d
+- This is a specific difficulty request and must be honored
+- Ignore user performance data for rating assignment
+- Focus on creating a problem that matches this exact difficulty level`, *targetRating)
 	}
 
 	// Build focus requirements based on number of focus areas
@@ -377,7 +422,7 @@ The problem you generate MUST satisfy the focus area requirements below:
 	}
 
 	return fmt.Sprintf(`Generate a competitive programming problem.
-%s%s
+%s%s%s
 
 You must respond with ONLY valid JSON in the following exact format (no markdown, no code blocks, just raw JSON):
 
@@ -385,6 +430,7 @@ You must respond with ONLY valid JSON in the following exact format (no markdown
   "title": "Problem Title",
   "description": "# Problem Description\n\n[Provide a clear story and problem statement here]\n\n## Input Format\n\n[Describe input format]\n\n## Output Format\n\n[Describe output format]\n\n## Constraints\n\n[List constraints]\n\n## Example 1\n**Input:**\n`+"```"+`\n[Input 1]\n`+"```"+`\n**Output:**\n`+"```"+`\n[Output 1]\n`+"```"+`\n**Explanation:**\n[Explanation 1]\n\n## Example 2\n**Input:**\n`+"```"+`\n[Input 2]\n`+"```"+`\n**Output:**\n`+"```"+`\n[Output 2]\n`+"```"+`\n**Explanation:**\n[Explanation 2]",
   "focus_area": "%s",
+  "rating": 1200,
   "sample_cases": [
     {
       "input": "sample input 1",
@@ -406,6 +452,20 @@ You must respond with ONLY valid JSON in the following exact format (no markdown
   ]
 }
 
+RATING ASSIGNMENT (Codeforces-style, range 800-3000):
+- Assign "rating" as an integer based on the user's performance context and skill level
+- Rating scale interpretation:
+  * 800-1100: Beginner level (simple implementation, basic loops/conditionals)
+  * 1100-1400: Elementary level (basic algorithms, simple data structures)
+  * 1400-1700: Intermediate level (standard algorithms, hash maps, two pointers)
+  * 1700-2000: Advanced level (complex algorithms, trees, graphs, DP)
+  * 2000-2400: Expert level (advanced DP, segment trees, number theory)
+  * 2400-3000: Master level (very complex algorithms, advanced data structures)
+- Use the user's Codeforces rating and LeetCode solve counts to determine appropriate challenge
+- If user has strong performance: assign rating near or slightly above their level
+- If user has weak performance: assign rating below their level for practice
+- The rating should be RELATIVE to the user's demonstrated skill level
+
 - Must be solvable in C++, Python, Java, and JavaScript
 - Provide exactly 2 sample cases in the 'sample_cases' array.
 - ALSO INCLUDE THESE SAME 2 SAMPLE CASES IN THE 'description' FIELD using the format specified above (## Example 1, ## Example 2).
@@ -413,28 +473,11 @@ You must respond with ONLY valid JSON in the following exact format (no markdown
 - Use proper input/output format that can be read from stdin and written to stdout
 - Make the problem challenging but solvable in 10-15 minutes
 - Include clear constraints in the description
-- **CRITICAL**: Append a '## Solution Hints' section at the very end of the 'description'. Checkpoints or algorithmic hints to help a stuck user, but DO NOT give the full code.`, personalizationSection, focusRequirements, focusStr)
+- **CRITICAL**: Append a '## Solution Hints' section at the very end of the 'description'. Checkpoints or algorithmic hints to help a stuck user, but DO NOT give the full code.`, personalizationSection, targetRatingSection, focusRequirements, focusStr)
 }
 
-// fetchFocusAreaGuidance fetches and combines guidance for multiple focus areas
+// fetchFocusAreaGuidance is deprecated - dynamic focus areas don't have guidance
 func fetchFocusAreaGuidance(focusAreas []string) string {
-	if len(focusAreas) == 0 {
-		return ""
-	}
-
-	var guidances []string
-	for _, area := range focusAreas {
-		var fa models.FocusArea
-		result := database.DB.Where("slug = ?", utils.Slugify(area)).First(&fa)
-		if result.Error == nil && fa.PromptGuidance != "" {
-			guidances = append(guidances, fmt.Sprintf("**%s:**\n%s", fa.Name, fa.PromptGuidance))
-		}
-	}
-
-	if len(guidances) > 0 {
-		return strings.Join(guidances, "\n\n")
-	}
-
 	return ""
 }
 
@@ -442,7 +485,7 @@ func fetchFocusAreaGuidance(focusAreas []string) string {
 type MockProvider struct{}
 
 // GenerateProblem returns a mock problem from the mock_problem.json file
-func (m *MockProvider) GenerateProblem(ctx context.Context, focusAreas []string, personalizationContext string) (*models.ProblemGenerationResponse, error) {
+func (m *MockProvider) GenerateProblem(ctx context.Context, focusAreas []string, personalizationContext string, targetRating *int) (*models.ProblemGenerationResponse, error) {
 	log.Println("Using mock problem (API keys not configured)")
 
 	// Read mock problem from file
@@ -462,6 +505,12 @@ func (m *MockProvider) GenerateProblem(ctx context.Context, focusAreas []string,
 		log.Printf("Mock problem adapted for focus area: %s", focusAreas[0])
 	}
 
+	// If target rating is specified, use it
+	if targetRating != nil {
+		mockResponse.Rating = *targetRating
+		log.Printf("Mock problem adapted for target rating: %d", *targetRating)
+	}
+
 	return &mockResponse, nil
 }
 
@@ -470,7 +519,7 @@ func (m *MockProvider) GenerateProblemStream(ctx context.Context, focusAreas []s
 	log.Println("Using mock problem stream (API keys not configured)")
 
 	// Get the mock problem
-	problem, err := m.GenerateProblem(ctx, focusAreas, "")
+	problem, err := m.GenerateProblem(ctx, focusAreas, "", nil)
 	if err != nil {
 		return err
 	}

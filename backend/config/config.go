@@ -3,7 +3,9 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
+	"strings"
 )
 
 // ProviderConfig represents the provider configuration
@@ -19,6 +21,12 @@ type ProviderConfig struct {
 }
 
 var Config ProviderConfig
+
+var validStrategies = map[string]bool{
+	"rotate":  true,
+	"combine": true,
+	"mix":     true,
+}
 
 // LoadConfig loads the configuration from config.json
 func LoadConfig() error {
@@ -38,15 +46,11 @@ func LoadConfig() error {
 		strategy = "mix"
 	}
 	
-	// Validate strategy against allowlist
-	validStrategies := map[string]bool{
-		"rotate":  true,
-		"combine": true,
-		"mix":     true,
-	}
+	// Normalize to lowercase for case-insensitive validation
+	strategy = strings.ToLower(strategy)
 	
 	if !validStrategies[strategy] {
-		log.Printf("Invalid PROBLEM_GENERATION_STRATEGY '%s', defaulting to 'mix'", strategy)
+		log.Printf("Invalid PROBLEM_GENERATION_STRATEGY '%s' (normalized), defaulting to 'mix'", strategy)
 		strategy = "mix"
 	}
 	

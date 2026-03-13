@@ -68,6 +68,7 @@ func main() {
 	statsHandler := handlers.NewStatsHandler(statsService)
 	focusAreasHandler := handlers.NewFocusAreasHandler()
 	sessionHandler := handlers.NewSessionHandler(sessionService)
+	generationHandler := handlers.NewGenerationHandler(statsService)
 
 	// Setup Gin router
 	router := gin.Default()
@@ -77,9 +78,11 @@ func main() {
 	corsConfig.AllowOrigins = []string{
 		"http://localhost:3000",
 		"http://simulate-interview.localhost:1355",
+		"http://api.simulate-interview.localhost:1355",
 	}
 	corsConfig.AllowMethods = []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}
 	corsConfig.AllowHeaders = []string{"Origin", "Content-Length", "Content-Type", "Authorization"}
+	corsConfig.AllowCredentials = true
 	router.Use(cors.New(corsConfig))
 
 	// API routes
@@ -89,22 +92,23 @@ func main() {
 		api.POST("/auth/login", authHandler.Login)
 		api.POST("/auth/logout", authHandler.Logout)
 
-		// Focus areas (public)
-		api.GET("/focus-areas", focusAreasHandler.GetFocusAreas)
-
-		// Problems (existing routes)
-		api.GET("/problems", handlers.GetProblems)
-		api.GET("/problems/:id", handlers.GetProblem)
-		api.POST("/problems/generate", handlers.GenerateProblem)
-		api.POST("/problems/generate-stream", handlers.StreamGenerateProblem)
-
-		// Code execution (existing)
-		api.POST("/execute", handlers.ExecuteCode)
-
-		// Protected routes
+		// protected routes
 		protected := api.Group("")
 		protected.Use(middleware.AuthRequired(authService))
 		{
+			// Focus areas
+			protected.GET("/focus-areas", focusAreasHandler.GetFocusAreas)
+
+			// Problems
+			protected.GET("/problems", handlers.GetProblems)
+			protected.GET("/problems/:id", handlers.GetProblem)
+			protected.GET("/problems/:id/session", handlers.GetProblemSession)
+			protected.POST("/problems/generate", generationHandler.GenerateProblem)
+			protected.POST("/problems/generate-stream", handlers.StreamGenerateProblem)
+
+			// Code execution
+			protected.POST("/execute", handlers.ExecuteCode)
+
 			// Profile routes
 			protected.POST("/profile/setup", profileHandler.Setup)
 			protected.GET("/profile", profileHandler.GetProfile)
@@ -116,8 +120,10 @@ func main() {
 
 			// Session routes
 			protected.POST("/sessions", sessionHandler.CreateSession)
+			protected.GET("/sessions", sessionHandler.ListActiveSessions)
 			protected.GET("/sessions/:session_id", sessionHandler.GetSession)
 			protected.GET("/sessions/:session_id/next/:current_number", sessionHandler.GetNextProblem)
+			protected.POST("/sessions/:session_id/complete", sessionHandler.CompleteSession)
 		}
 	}
 

@@ -35,4 +35,5 @@ type SessionService interface {
 	IsNextProblemReady(ctx context.Context, sessionID uuid.UUID, currentNumber int) (bool, error)
 	UpdateCurrentProblem(ctx context.Context, sessionID uuid.UUID, problemNumber int) error
 	CompleteSession(ctx context.Context, sessionID uuid.UUID) error
+	ListActiveSessions(ctx context.Context, userID uuid.UUID) ([]ActiveSessionSummary, error)
 }

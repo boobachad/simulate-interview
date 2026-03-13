@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import type { SessionData } from "@/types/api";
+import type { SessionData } from "@/lib/api";
 
 interface SessionTimerState {
   timeLeft: number;
@@ -18,16 +18,19 @@ interface UseSessionTimerReturn {
 }
 
 const BASE_MINUTES_PER_PROBLEM = 30;
-const DIFFICULTY_MULTIPLIERS = {
-  easy: 0.7,
-  medium: 1.0,
-  hard: 1.5,
-} as const;
+
+// Rating-based time multipliers (Codeforces-style)
+function getRatingMultiplier(rating: number): number {
+  if (rating < 1200) return 0.7;  // Easier problems
+  if (rating < 1600) return 1.0;  // Medium problems
+  if (rating < 2000) return 1.3;  // Hard problems
+  return 1.5;                      // Very hard problems
+}
 
 function calculateSessionDuration(sessionData: SessionData): number {
   return sessionData.problems.reduce((acc, p) => {
-    const difficulty = p.problem?.difficulty || "medium";
-    const multiplier = DIFFICULTY_MULTIPLIERS[difficulty] ?? DIFFICULTY_MULTIPLIERS.medium;
+    const rating = p.problem?.rating || 1200;
+    const multiplier = getRatingMultiplier(rating);
     return acc + BASE_MINUTES_PER_PROBLEM * multiplier;
   }, 0);
 }
@@ -121,12 +124,15 @@ export function useSessionTimer(
   const resetTimer = useCallback(() => {
     if (!sessionId) return;
 
-    setState((prev) => ({
-      timeLeft: prev.totalTime,
-      totalTime: prev.totalTime,
-      isRunning: true,
-    }));
-
+    setState((prev) => {
+      const newTotal = prev.totalTime;
+      return {
+        timeLeft: newTotal,
+        totalTime: newTotal,
+        isRunning: true,
+      };
+    });
+    
     const now = Date.now();
     sessionStorage.setItem(getStorageKey(sessionId, "timer"), state.totalTime.toString());
     sessionStorage.setItem(getStorageKey(sessionId, "started_at"), now.toString());

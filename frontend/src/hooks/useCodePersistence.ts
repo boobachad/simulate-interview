@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { BOILERPLATES } from "@/lib/boilerplates";
 
 interface UseCodePersistenceReturn {
@@ -83,6 +83,7 @@ export function useCodePersistence(
   });
 
   const [pendingSave, setPendingSave] = useState<string | null>(null);
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Load code when problem or language changes
   useEffect(() => {
@@ -98,31 +99,33 @@ export function useCodePersistence(
     }
   }, [problemId, language, sessionId]);
 
-  // Debounced save with useMemo
-  const debouncedSave = useMemo(() => {
-    let timeoutId: NodeJS.Timeout | null = null;
-
-    return (codeToSave: string) => {
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-      }
-
-      timeoutId = setTimeout(() => {
-        if (!problemId) return;
-
-        const key = getStorageKey(sessionId, problemId, language);
-        safeLocalStorageSet(key, codeToSave);
-        setPendingSave(null);
-      }, DEBOUNCE_DELAY_MS);
-    };
-  }, [problemId, language, sessionId]);
-
-  // Trigger debounced save when pendingSave changes
+  // Debounced save
   useEffect(() => {
-    if (pendingSave !== null) {
-      debouncedSave(pendingSave);
+    if (pendingSave === null) return;
+
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
     }
-  }, [pendingSave, debouncedSave]);
+
+    timeoutRef.current = setTimeout(() => {
+      if (!problemId) return;
+
+      const key = getStorageKey(sessionId, problemId, language);
+      safeLocalStorageSet(key, pendingSave);
+      setPendingSave(null);
+    }, DEBOUNCE_DELAY_MS);
+
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        // Flush pending save synchronously on unmount
+        if (pendingSave !== null && problemId) {
+          const key = getStorageKey(sessionId, problemId, language);
+          safeLocalStorageSet(key, pendingSave);
+        }
+      }
+    };
+  }, [pendingSave, problemId, language, sessionId]);
 
   // Listen for storage events (multi-tab sync)
   useEffect(() => {

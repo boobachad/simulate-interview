@@ -1,9 +1,11 @@
 package services
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -48,12 +50,11 @@ type UserProfile struct {
 }
 
 // FetchLeetCodeStats fetches user statistics from LeetCode
-func FetchLeetCodeStats(username string) (*LeetCodeStats, error) {
+func FetchLeetCodeStats(ctx context.Context, username string) (*LeetCodeStats, error) {
 	if username == "" {
 		return nil, nil
 	}
 
-	// LeetCode GraphQL API endpoint
 	url := "https://leetcode.com/graphql"
 
 	query := fmt.Sprintf(`{
@@ -94,8 +95,8 @@ func FetchLeetCodeStats(username string) (*LeetCodeStats, error) {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	client := &http.Client{Timeout: 10 * time.Second}
-	req, err := http.NewRequest("POST", url, strings.NewReader(string(jsonData)))
+	client := &http.Client{Timeout: 30 * time.Second}
+	req, err := http.NewRequestWithContext(ctx, "POST", url, strings.NewReader(string(jsonData)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -103,11 +104,19 @@ func FetchLeetCodeStats(username string) (*LeetCodeStats, error) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "Mozilla/5.0")
 
+	log.Printf("LeetCode: Starting request for user %s", username)
+	startTime := time.Now()
+	
 	resp, err := client.Do(req)
+	elapsed := time.Since(startTime)
+	
 	if err != nil {
+		log.Printf("LeetCode: Request failed after %v: %v", elapsed, err)
 		return nil, fmt.Errorf("failed to fetch LeetCode stats: %w", err)
 	}
 	defer resp.Body.Close()
+
+	log.Printf("LeetCode: Request completed in %v with status %d", elapsed, resp.StatusCode)
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -192,24 +201,39 @@ func FetchLeetCodeStats(username string) (*LeetCodeStats, error) {
 		}
 	}
 
+	log.Printf("LeetCode: Successfully fetched stats for %s", username)
 	return stats, nil
 }
 
 // FetchCodeforcesStats fetches user statistics from Codeforces
-func FetchCodeforcesStats(username string) (*CodeforcesStats, error) {
+func FetchCodeforcesStats(ctx context.Context, username string) (*CodeforcesStats, error) {
 	if username == "" {
 		return nil, nil
 	}
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Timeout: 30 * time.Second}
 
 	// Fetch user info
 	userInfoURL := fmt.Sprintf("https://codeforces.com/api/user.info?handles=%s", username)
-	resp, err := client.Get(userInfoURL)
+	
+	log.Printf("Codeforces: Starting user.info request for %s", username)
+	startTime := time.Now()
+	
+	req, err := http.NewRequestWithContext(ctx, "GET", userInfoURL, nil)
 	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := client.Do(req)
+	elapsed := time.Since(startTime)
+	
+	if err != nil {
+		log.Printf("Codeforces: user.info request failed after %v: %v", elapsed, err)
 		return nil, fmt.Errorf("failed to fetch Codeforces user info: %w", err)
 	}
 	defer resp.Body.Close()
+
+	log.Printf("Codeforces: user.info completed in %v with status %d", elapsed, resp.StatusCode)
 
 	var userInfoResult struct {
 		Status string `json:"status"`
@@ -241,11 +265,17 @@ func FetchCodeforcesStats(username string) (*CodeforcesStats, error) {
 
 	// Fetch user submissions to count problems by tags
 	submissionsURL := fmt.Sprintf("https://codeforces.com/api/user.status?handle=%s", username)
-	resp, err = client.Get(submissionsURL)
+	req2, err := http.NewRequestWithContext(ctx, "GET", submissionsURL, nil)
 	if err != nil {
-		return stats, nil // Return basic stats even if submissions fail
+		return stats, nil
 	}
-	defer resp.Body.Close()
+
+	resp2, err := client.Do(req2)
+	if err != nil {
+		log.Printf("Codeforces: user.status request failed: %v", err)
+		return stats, nil
+	}
+	defer resp2.Body.Close()
 
 	var submissionsResult struct {
 		Status string `json:"status"`
@@ -259,8 +289,8 @@ func FetchCodeforcesStats(username string) (*CodeforcesStats, error) {
 		} `json:"result"`
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&submissionsResult); err != nil {
-		return stats, nil // Return basic stats
+	if err := json.NewDecoder(resp2.Body).Decode(&submissionsResult); err != nil {
+		return stats, nil
 	}
 
 	// Count solved problems by tags
@@ -280,20 +310,30 @@ func FetchCodeforcesStats(username string) (*CodeforcesStats, error) {
 
 	// Fetch contest participation count
 	contestURL := fmt.Sprintf("https://codeforces.com/api/user.rating?handle=%s", username)
-	resp2, err := client.Get(contestURL)
-	if err == nil {
-		defer resp2.Body.Close()
-		var contestResult struct {
-			Status string `json:"status"`
-			Result []struct {
-				ContestID int `json:"contestId"`
-			} `json:"result"`
-		}
-		if err := json.NewDecoder(resp2.Body).Decode(&contestResult); err == nil {
-			stats.ContestCount = len(contestResult.Result)
+	req3, err3 := http.NewRequestWithContext(ctx, "GET", contestURL, nil)
+	if err3 != nil {
+		log.Printf("Codeforces: Failed to create contest request: %v", err3)
+	} else {
+		resp3, err3 := client.Do(req3)
+		if err3 != nil {
+			log.Printf("Codeforces: Failed to fetch contest data: %v", err3)
+		} else {
+			defer resp3.Body.Close()
+			var contestResult struct {
+				Status string `json:"status"`
+				Result []struct {
+					ContestID int `json:"contestId"`
+				} `json:"result"`
+			}
+			if err3 := json.NewDecoder(resp3.Body).Decode(&contestResult); err3 != nil {
+				log.Printf("Codeforces: Failed to decode contest data: %v", err3)
+			} else {
+				stats.ContestCount = len(contestResult.Result)
+			}
 		}
 	}
 
+	log.Printf("Codeforces: Successfully fetched stats for %s", username)
 	return stats, nil
 }
 

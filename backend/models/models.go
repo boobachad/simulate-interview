@@ -46,14 +46,16 @@ func (t *TestCaseList) Scan(value interface{}) error {
 
 // Problem represents a coding interview problem
 type Problem struct {
-	ID          uuid.UUID    `gorm:"type:uuid;primary_key;default:gen_random_uuid()" json:"id"`
-	Title       string       `gorm:"type:varchar(500);not null" json:"title"`
-	Description string       `gorm:"type:text;not null" json:"description"`
-	FocusAreaID uuid.UUID    `gorm:"type:uuid;not null" json:"focus_area_id"`
-	FocusArea   FocusArea    `gorm:"foreignKey:FocusAreaID" json:"focus_area"`
-	SampleCases TestCaseList `gorm:"type:jsonb;not null" json:"sample_cases"`
-	HiddenCases TestCaseList `gorm:"type:jsonb;not null" json:"hidden_cases"`
-	CreatedAt   time.Time    `gorm:"index" json:"created_at"`
+	ID             uuid.UUID    `gorm:"type:uuid;primary_key;default:gen_random_uuid()" json:"id"`
+	Title          string       `gorm:"type:varchar(500);not null" json:"title"`
+	Description    string       `gorm:"type:text;not null" json:"description"`
+	Rating         int          `gorm:"type:integer;not null;default:1200" json:"rating"`
+	FocusAreaID    *uuid.UUID   `gorm:"type:uuid" json:"focus_area_id,omitempty"`
+	FocusAreaTopic *string      `gorm:"type:varchar(255);index" json:"focus_area_topic,omitempty"`
+	FocusArea      FocusArea    `gorm:"foreignKey:FocusAreaID" json:"focus_area,omitempty"`
+	SampleCases    TestCaseList `gorm:"type:jsonb;not null" json:"sample_cases"`
+	HiddenCases    TestCaseList `gorm:"type:jsonb;not null" json:"hidden_cases"`
+	CreatedAt      time.Time    `gorm:"index" json:"created_at"`
 }
 
 // BeforeCreate sets UUID before creating record
@@ -74,7 +76,8 @@ func (p *Problem) BeforeCreate(tx *gorm.DB) error {
 
 // ProblemGenerationRequest represents the request to generate a problem
 type ProblemGenerationRequest struct {
-	FocusAreas []string `json:"focus_areas" binding:"required"`
+	FocusAreas   []string `json:"focus_areas" binding:"required"`
+	TargetRating *int     `json:"target_rating,omitempty"`
 }
 
 // ProblemGenerationResponse represents the LLM response format
@@ -82,6 +85,7 @@ type ProblemGenerationResponse struct {
 	Title       string       `json:"title"`
 	Description string       `json:"description"`
 	FocusArea   string       `json:"focus_area"`
+	Rating      int          `json:"rating"`
 	SampleCases TestCaseList `json:"sample_cases"`
 	HiddenCases TestCaseList `json:"hidden_cases"`
 }
@@ -119,10 +123,11 @@ type ExecutionResponse struct {
 
 // UserProfile represents user authentication and profile
 type UserProfile struct {
-	ID           uuid.UUID `gorm:"type:uuid;primary_key;default:gen_random_uuid()" json:"id"`
-	Name         string    `gorm:"type:varchar(255);unique;not null" json:"name"`
-	PasswordHash string    `gorm:"type:varchar(255);not null" json:"-"`
-	CreatedAt    time.Time `json:"created_at"`
+	ID                  uuid.UUID `gorm:"type:uuid;primary_key;default:gen_random_uuid()" json:"id"`
+	Name                string    `gorm:"type:varchar(255);unique;not null" json:"name"`
+	PasswordHash        string    `gorm:"type:varchar(255);not null" json:"-"`
+	DefaultProblemCount int       `gorm:"default:5;check:default_problem_count >= 1 AND default_problem_count <= 10" json:"default_problem_count"`
+	CreatedAt           time.Time `json:"created_at"`
 }
 
 // BeforeCreate sets UUID before creating record

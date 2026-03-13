@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/boobachad/simulate-interview/backend/models"
@@ -32,7 +33,18 @@ func Connect(ctx context.Context) error {
 		Logger: logger.Default.LogMode(logger.Error),
 	})
 	if err != nil {
-		return fmt.Errorf("failed to connect to database: %w", err)
+		// Attempt to create database if it doesn't exist
+		if createErr := createDatabaseIfNotExists(databaseURL); createErr != nil {
+			return fmt.Errorf("failed to connect to database: %w", err)
+		}
+		
+		// Retry connection after database creation
+		DB, err = gorm.Open(postgres.Open(databaseURL), &gorm.Config{
+			Logger: logger.Default.LogMode(logger.Error),
+		})
+		if err != nil {
+			return fmt.Errorf("failed to connect to database after creation: %w", err)
+		}
 	}
 
 	// Configure connection pool
@@ -75,6 +87,50 @@ func ConfigureConnectionPool(ctx context.Context, db *gorm.DB) error {
 	return nil
 }
 
+// createDatabaseIfNotExists attempts to create the database if it doesn't exist
+func createDatabaseIfNotExists(databaseURL string) error {
+	dbName := extractDatabaseName(databaseURL)
+	if dbName == "" {
+		return fmt.Errorf("could not extract database name from URL")
+	}
+
+	postgresURL := strings.Replace(databaseURL, "/"+dbName, "/postgres", 1)
+	
+	tempDB, err := gorm.Open(postgres.Open(postgresURL), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Error),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to connect to postgres database: %w", err)
+	}
+
+	sqlDB, err := tempDB.DB()
+	if err != nil {
+		return fmt.Errorf("failed to get underlying DB: %w", err)
+	}
+	defer sqlDB.Close()
+
+	createSQL := fmt.Sprintf("CREATE DATABASE %s TEMPLATE template0", dbName)
+	if err := tempDB.Exec(createSQL).Error; err != nil {
+		if !strings.Contains(err.Error(), "already exists") {
+			return fmt.Errorf("failed to create database: %w", err)
+		}
+	}
+
+	log.Printf("Database '%s' created successfully", dbName)
+	return nil
+}
+
+// extractDatabaseName extracts database name from PostgreSQL connection URL
+func extractDatabaseName(databaseURL string) string {
+	parts := strings.Split(databaseURL, "/")
+	if len(parts) < 4 {
+		return ""
+	}
+	dbNameWithParams := parts[len(parts)-1]
+	dbName := strings.Split(dbNameWithParams, "?")[0]
+	return dbName
+}
+
 // Migrate runs database migrations
 func Migrate() error {
 	log.Println("Running database migrations...")
@@ -92,6 +148,7 @@ func Migrate() error {
 		&models.CodingProfile{},
 		&models.UserStats{},
 		&models.UserFocusProgress{},
+		&models.FocusAreaDynamic{},
 		&models.InterviewSession{},
 		&models.SessionProblem{},
 		&models.SessionToken{},

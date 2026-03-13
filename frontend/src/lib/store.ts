@@ -1,51 +1,13 @@
-import { create } from 'zustand';
-
-export interface TestCase {
-  input: string;
-  expected_output: string;
-  explanation?: string;
-}
-
-export interface FocusArea {
-  id: string;
-  name: string;
-  slug: string;
-  created_at: string;
-}
-
-export interface Problem {
-  id: string;
-  title: string;
-  description: string;
-  focus_area_id: string;
-  focus_area: FocusArea;
-  sample_cases: TestCase[];
-  hidden_cases: TestCase[];
-  created_at: string;
-}
-
-export interface ExecutionResult {
-  case_number: number;
-  input: string;
-  expected_output: string;
-  actual_output: string;
-  passed: boolean;
-  error?: string;
-}
-
-export interface ExecutionResponse {
-  success: boolean;
-  results: ExecutionResult[];
-  total_passed: number;
-  total_cases: number;
-}
+import { create } from "zustand";
+import type { FocusArea, Problem, ExecutionResponse, TestCase } from "./api";
 
 interface InterviewStore {
-  // Focus areas
+  // Focus areas (dynamic platform topics)
   focusAreas: FocusArea[];
   selectedFocusAreas: string[];
   setFocusAreas: (areas: FocusArea[]) => void;
-  toggleFocusArea: (slug: string) => void;
+  toggleFocusArea: (topic: string) => void;
+  clearSelectedFocusAreas: () => void;
 
   // Current problem
   currentProblem: Problem | null;
@@ -71,19 +33,20 @@ export const useInterviewStore = create<InterviewStore>((set) => ({
   focusAreas: [],
   selectedFocusAreas: [],
   setFocusAreas: (areas) => set({ focusAreas: areas }),
-  toggleFocusArea: (slug) =>
+  toggleFocusArea: (topic) =>
     set((state) => ({
-      selectedFocusAreas: state.selectedFocusAreas.includes(slug)
-        ? state.selectedFocusAreas.filter((s) => s !== slug)
-        : [...state.selectedFocusAreas, slug],
+      selectedFocusAreas: state.selectedFocusAreas.includes(topic)
+        ? state.selectedFocusAreas.filter((t) => t !== topic)
+        : [...state.selectedFocusAreas, topic],
     })),
+  clearSelectedFocusAreas: () => set({ selectedFocusAreas: [] }),
 
   // Current problem
   currentProblem: null,
   setCurrentProblem: (problem) => set({ currentProblem: problem }),
 
   // Code editor
-  code: '#include <bits/stdc++.h>\nusing namespace std;\n\nvoid solve() {\n    int a,b;if (cin>>a>>b) cout<<(a+b)<<endl;\n}\n\nint main() {\n    ios_base::sync_with_stdio(false);\n    cin.tie(NULL);\n    int t;cin>>t; while(t--) solve();\n    return 0;\n}',
+  code: "#include <bits/stdc++.h>\nusing namespace std;\n\nvoid solve() {\n    int a,b;if (cin>>a>>b) cout<<(a+b)<<endl;\n}\n\nint main() {\n    ios_base::sync_with_stdio(false);\n    cin.tie(NULL);\n    int t;cin>>t; while(t--) solve();\n    return 0;\n}",
   setCode: (code) => set({ code }),
 
   // Execution results

@@ -12,8 +12,18 @@ import (
 	"github.com/google/uuid"
 )
 
+type GenerationHandler struct {
+	statsService services.StatsService
+}
+
+func NewGenerationHandler(statsService services.StatsService) *GenerationHandler {
+	return &GenerationHandler{
+		statsService: statsService,
+	}
+}
+
 // GenerateProblem generates a new problem using LLM
-func GenerateProblem(c *gin.Context) {
+func (h *GenerationHandler) GenerateProblem(c *gin.Context) {
 	var request models.ProblemGenerationRequest
 
 	if err := c.ShouldBindJSON(&request); err != nil {
@@ -21,6 +31,21 @@ func GenerateProblem(c *gin.Context) {
 			"error": "Invalid request format",
 		})
 		return
+	}
+
+	// Get user ID from context (set by auth middleware)
+	userID, exists := c.Get("user_id")
+	var userUUID uuid.UUID
+	if exists {
+		var ok bool
+		userUUID, ok = userID.(uuid.UUID)
+		if !ok {
+			log.Printf("Warning: Invalid user_id type in context, generating without personalization")
+			exists = false
+		}
+	} else {
+		// If no user context, generate without personalization
+		log.Printf("Warning: No user context found, generating without personalization")
 	}
 
 	// If no focus areas specified, pick a random one
@@ -51,10 +76,43 @@ func GenerateProblem(c *gin.Context) {
 	// Check if using mock provider
 	isMock := services.IsUsingMockProvider(llmProvider)
 
-	// Generate problem with context
+	// Build personalization context
 	ctx := c.Request.Context()
+	personalizationContext := ""
+
+	if exists {
+		// Determine focus mode based on number of focus areas
+		focusMode := "all"
+		focusTopic := ""
+		focusTopics := []string{}
+
+		if len(request.FocusAreas) == 1 {
+			focusMode = "single"
+			focusTopic = request.FocusAreas[0]
+		} else if len(request.FocusAreas) > 1 {
+			focusMode = "multiple"
+			focusTopics = request.FocusAreas
+		}
+
+		var err error
+		personalizationContext, err = h.statsService.BuildPersonalizationContext(ctx, userUUID, focusMode, focusTopic, focusTopics)
+		if err != nil {
+			log.Printf("Failed to build personalization context: %v", err)
+			personalizationContext = ""
+		} else {
+			log.Printf("=== PERSONALIZATION CONTEXT ===")
+			log.Printf("Length: %d characters", len(personalizationContext))
+			log.Printf("Content:\n%s", personalizationContext)
+			log.Printf("=== END PERSONALIZATION CONTEXT ===")
+		}
+	}
+
+	// Generate problem with context
 	log.Printf("Generating problem for focus areas: %v", request.FocusAreas)
-	problemResponse, err := llmProvider.GenerateProblem(ctx, request.FocusAreas, "")
+	if request.TargetRating != nil {
+		log.Printf("Target rating: %d", *request.TargetRating)
+	}
+	problemResponse, err := llmProvider.GenerateProblem(ctx, request.FocusAreas, personalizationContext, request.TargetRating)
 	if err != nil {
 		log.Printf("Error generating problem: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -73,6 +131,7 @@ func GenerateProblem(c *gin.Context) {
 		mockProblem := models.Problem{
 			Title:       problemResponse.Title,
 			Description: problemResponse.Description,
+			Rating:      problemResponse.Rating,
 			SampleCases: problemResponse.SampleCases,
 			HiddenCases: problemResponse.HiddenCases,
 			FocusArea:   focusArea,
@@ -83,6 +142,7 @@ func GenerateProblem(c *gin.Context) {
 			"id":           "testing",
 			"title":        mockProblem.Title,
 			"description":  mockProblem.Description,
+			"rating":       mockProblem.Rating,
 			"focus_area":   mockProblem.FocusArea,
 			"sample_cases": mockProblem.SampleCases,
 			"hidden_cases": mockProblem.HiddenCases,
@@ -106,19 +166,39 @@ func GenerateProblem(c *gin.Context) {
 	var existingProblem models.Problem
 	if result := database.DB.Where("title = ?", problemResponse.Title).First(&existingProblem); result.Error == nil {
 		log.Printf("Found existing problem with title '%s', reusing ID: %s", existingProblem.Title, existingProblem.ID)
-		database.DB.Preload("FocusArea").First(&existingProblem, "id = ?", existingProblem.ID)
-		c.JSON(http.StatusOK, existingProblem)
+
+		focusAreaValue := ""
+		if existingProblem.FocusAreaTopic != nil && *existingProblem.FocusAreaTopic != "" {
+			focusAreaValue = *existingProblem.FocusAreaTopic
+		} else if existingProblem.FocusAreaID != nil {
+			var fa models.FocusArea
+			if err := database.DB.First(&fa, "id = ?", existingProblem.FocusAreaID).Error; err == nil {
+				focusAreaValue = fa.Slug
+			}
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"id":           existingProblem.ID,
+			"title":        existingProblem.Title,
+			"description":  existingProblem.Description,
+			"rating":       existingProblem.Rating,
+			"focus_area":   focusAreaValue,
+			"sample_cases": existingProblem.SampleCases,
+			"created_at":   existingProblem.CreatedAt,
+		})
 		return
 	}
 
-	// Save problem to database
+	// Save problem to database with focus_area_topic
+	focusAreaTopic := problemResponse.FocusArea
 	problem := models.Problem{
-		ID:          uuid.New(),
-		Title:       problemResponse.Title,
-		Description: problemResponse.Description,
-		FocusAreaID: focusArea.ID,
-		SampleCases: problemResponse.SampleCases,
-		HiddenCases: problemResponse.HiddenCases,
+		ID:             uuid.New(),
+		Title:          problemResponse.Title,
+		Description:    problemResponse.Description,
+		Rating:         problemResponse.Rating,
+		FocusAreaTopic: &focusAreaTopic,
+		SampleCases:    problemResponse.SampleCases,
+		HiddenCases:    problemResponse.HiddenCases,
 	}
 
 	result = database.DB.Create(&problem)
@@ -130,9 +210,14 @@ func GenerateProblem(c *gin.Context) {
 		return
 	}
 
-	// Load the focus area relationship
-	database.DB.Preload("FocusArea").First(&problem, "id = ?", problem.ID)
-
 	log.Printf("Problem generated successfully: %s", problem.Title)
-	c.JSON(http.StatusOK, problem)
+	c.JSON(http.StatusOK, gin.H{
+		"id":           problem.ID,
+		"title":        problem.Title,
+		"description":  problem.Description,
+		"rating":       problem.Rating,
+		"focus_area":   focusAreaTopic,
+		"sample_cases": problem.SampleCases,
+		"created_at":   problem.CreatedAt,
+	})
 }

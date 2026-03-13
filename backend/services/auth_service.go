@@ -29,10 +29,25 @@ func (s *authService) Authenticate(ctx context.Context, username, password strin
 
 	// Query user by username with context
 	var user models.UserProfile
-	if err := s.db.WithContext(ctx).Where("name = ?", username).First(&user).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return "", nil, fmt.Errorf("user %s not found: %w", username, err)
+	err := s.db.WithContext(ctx).Where("name = ?", username).First(&user).Error
+	
+	if err == gorm.ErrRecordNotFound {
+		// User doesn't exist, create new user
+		newUser, createErr := s.CreateUser(ctx, username, password)
+		if createErr != nil {
+			return "", nil, fmt.Errorf("create new user %s: %w", username, createErr)
 		}
+		
+		// Create session token for new user
+		token, tokenErr := s.CreateSession(ctx, newUser.ID)
+		if tokenErr != nil {
+			return "", nil, fmt.Errorf("create session for new user %s: %w", newUser.ID, tokenErr)
+		}
+		
+		return token, newUser, nil
+	}
+	
+	if err != nil {
 		return "", nil, fmt.Errorf("query user %s: %w", username, err)
 	}
 

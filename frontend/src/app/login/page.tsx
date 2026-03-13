@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Loader2Icon, LogInIcon } from "lucide-react";
-import { apiClient, setAuthToken } from "@/lib/api-client";
+import { api, setAuthToken } from "@/lib/api";
 
 const loginSchema = z.object({
   username: z.string().min(1, "Username is required"),
@@ -29,7 +29,7 @@ export default function LoginPage() {
 
   const onSubmit = async (data: z.infer<typeof loginSchema>) => {
     try {
-      const response = await apiClient.auth.login({
+      const response = await api.auth.login({
         username: data.username.trim(),
         password: data.password.trim(),
       });
@@ -40,7 +40,7 @@ export default function LoginPage() {
       if (response.has_profile) {
         router.push("/start");
       } else {
-        router.push("/onboarding");
+        router.push("/profile-setup");
       }
     } catch (error: unknown) {
       const errorMessage =
@@ -76,7 +76,9 @@ export default function LoginPage() {
                     autoComplete="username"
                     autoFocus
                   />
-                  {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
+                  {fieldState.invalid && (
+                    <FieldError errors={[fieldState.error]} />
+                  )}
                 </Field>
               )}
             />
@@ -95,7 +97,9 @@ export default function LoginPage() {
                     aria-invalid={fieldState.invalid}
                     autoComplete="current-password"
                   />
-                  {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
+                  {fieldState.invalid && (
+                    <FieldError errors={[fieldState.error]} />
+                  )}
                 </Field>
               )}
             />

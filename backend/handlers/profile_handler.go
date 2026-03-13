@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"net/http"
 	"time"
 
@@ -57,9 +58,12 @@ func (h *ProfileHandler) Setup(c *gin.Context) {
 		return
 	}
 
-	// Trigger stats sync
+	// Trigger stats sync with detached context
+	syncCtx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+
 	syncStatus := "success"
-	if err := h.statsService.SyncStats(c.Request.Context(), uid); err != nil {
+	if err := h.statsService.SyncStats(syncCtx, uid); err != nil {
 		syncStatus = "partial"
 	}
 
@@ -134,7 +138,12 @@ func (h *ProfileHandler) SyncStats(c *gin.Context) {
 		return
 	}
 
-	if err := h.statsService.SyncStats(c.Request.Context(), uid); err != nil {
+	// Use detached context with longer timeout for external API calls
+	// Gin's request context may timeout before external APIs respond
+	syncCtx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+
+	if err := h.statsService.SyncStats(syncCtx, uid); err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Unable to fetch stats from both platforms, please try again later"})
 		return
 	}

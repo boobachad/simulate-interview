@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PlusIcon, XIcon, AlertTriangleIcon } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
-import { TestCase, ExecutionResult } from "@/lib/store";
+import { TestCase, ExecutionResult } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 interface TestCasesViewProps {

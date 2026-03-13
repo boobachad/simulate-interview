@@ -2,31 +2,27 @@
 
 import { useState, useEffect } from "react";
 import { Input } from "@/components/ui/input";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Checkbox } from "@/components/ui/checkbox";
 import { SearchIcon, Loader2Icon } from "lucide-react";
-import { apiClient } from "@/lib/api-client";
+import { api } from "@/lib/api";
 import { toast } from "sonner";
-import type { FocusArea, FocusSelection } from "@/types/api";
-import { isSingleTopicMode, isMultipleTopicsMode } from "@/types/api";
+import type { FocusArea, FocusSelection } from "@/lib/api";
 
 interface FocusAreaSelectorProps {
   selection: FocusSelection;
   onSelectionChange: (selection: FocusSelection) => void;
+  weakTopics?: string[];
 }
 
 export function FocusAreaSelector({
   selection,
   onSelectionChange,
+  weakTopics = [],
 }: FocusAreaSelectorProps) {
   const [focusAreas, setFocusAreas] = useState<FocusArea[]>([]);
   const [filteredAreas, setFilteredAreas] = useState<FocusArea[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [isLoading, setIsLoading] = useState(true);
-  const [page, setPage] = useState(1);
-  const PAGE_SIZE = 20;
 
   useEffect(() => {
     loadFocusAreas();
@@ -38,7 +34,7 @@ export function FocusAreaSelector({
 
   const loadFocusAreas = async () => {
     try {
-      const areas = await apiClient.focusAreas.list();
+      const areas = await api.focusAreas.list();
       const sorted = areas.sort((a, b) => b.problem_count - a.problem_count);
       setFocusAreas(sorted);
       setFilteredAreas(sorted);
@@ -54,7 +50,6 @@ export function FocusAreaSelector({
   const filterAreas = () => {
     if (!searchQuery.trim()) {
       setFilteredAreas(focusAreas);
-      setPage(1);
       return;
     }
 
@@ -63,208 +58,138 @@ export function FocusAreaSelector({
       area.topic.toLowerCase().includes(query)
     );
     setFilteredAreas(filtered);
-    setPage(1);
   };
 
-  const paginatedAreas = filteredAreas.slice(0, page * PAGE_SIZE);
-  const hasMore = paginatedAreas.length < filteredAreas.length;
-
-  const handleModeChange = (value: string) => {
-    if (value === "all") {
+  const handleChipClick = (topic: string | null) => {
+    if (topic === null) {
       onSelectionChange({ mode: "all" });
-    } else if (value === "single") {
-      onSelectionChange({ mode: "single", topic: "" });
-    } else if (value === "multiple") {
-      onSelectionChange({ mode: "multiple", topics: [] });
-    }
-  };
-
-  const handleTopicSelect = (topic: string) => {
-    onSelectionChange({ mode: "single", topic });
-  };
-
-  const handleTopicToggle = (topic: string) => {
-    if (!isMultipleTopicsMode(selection)) return;
-
-    const isSelected = selection.topics.includes(topic);
-    
-    // Always allow removal
-    if (isSelected) {
-      const topics = selection.topics.filter((t) => t !== topic);
-      onSelectionChange({ mode: "multiple", topics });
       return;
     }
-    
-    // Prevent adding if already at limit
-    if (selection.topics.length >= 10) {
+
+    if (selection.mode === "all") {
+      onSelectionChange({ mode: "single", topic });
       return;
     }
-    
-    // Add topic
-    const topics = [...selection.topics, topic];
-    onSelectionChange({ mode: "multiple", topics });
+
+    if (selection.mode === "single") {
+      if (selection.topic === topic) {
+        onSelectionChange({ mode: "all" });
+      } else {
+        onSelectionChange({ mode: "multiple", topics: [selection.topic, topic] });
+      }
+      return;
+    }
+
+    if (selection.mode === "multiple") {
+      const isSelected = selection.topics.includes(topic);
+      
+      if (isSelected) {
+        const topics = selection.topics.filter((t) => t !== topic);
+        if (topics.length === 0) {
+          onSelectionChange({ mode: "all" });
+        } else if (topics.length === 1) {
+          const singleTopic = topics[0];
+          if (singleTopic) {
+            onSelectionChange({ mode: "single", topic: singleTopic });
+          }
+        } else {
+          onSelectionChange({ mode: "multiple", topics });
+        }
+      } else {
+        if (selection.topics.length >= 10) {
+          toast.error("Maximum 10 topics allowed");
+          return;
+        }
+        const topics = [...selection.topics, topic];
+        onSelectionChange({ mode: "multiple", topics });
+      }
+    }
   };
 
   const isTopicSelected = (topic: string): boolean => {
-    if (isSingleTopicMode(selection)) {
+    if (selection.mode === "single") {
       return selection.topic === topic;
     }
-    if (isMultipleTopicsMode(selection)) {
+    if (selection.mode === "multiple") {
       return selection.topics.includes(topic);
     }
     return false;
   };
 
-  const selectedCount = isMultipleTopicsMode(selection)
-    ? selection.topics.length
-    : 0;
-  const isMultipleValid = selectedCount >= 2 && selectedCount <= 10;
+  const selectedCount =
+    selection.mode === "all"
+      ? 0
+      : selection.mode === "single"
+      ? 1
+      : selection.topics.length;
 
   return (
     <div className="space-y-4">
-      <div>
-        <h3 className="font-semibold text-sm mb-2">Focus Mode</h3>
-        <RadioGroup
-          value={selection.mode}
-          onValueChange={handleModeChange}
-          className="flex gap-4"
-        >
-          <div className="flex items-center space-x-2">
-            <RadioGroupItem value="all" id="mode-all" />
-            <Label htmlFor="mode-all" className="font-normal cursor-pointer">
-              All Topics (Random)
-            </Label>
-          </div>
-          <div className="flex items-center space-x-2">
-            <RadioGroupItem value="single" id="mode-single" />
-            <Label htmlFor="mode-single" className="font-normal cursor-pointer">
-              Single Topic
-            </Label>
-          </div>
-          <div className="flex items-center space-x-2">
-            <RadioGroupItem value="multiple" id="mode-multiple" />
-            <Label
-              htmlFor="mode-multiple"
-              className="font-normal cursor-pointer"
-            >
-              Multiple Topics
-            </Label>
-          </div>
-        </RadioGroup>
+      <div className="flex items-center justify-between">
+        <h3 className="font-semibold text-sm">Focus Areas</h3>
+        <Badge variant="secondary" className="text-xs">
+          {selectedCount === 0 ? "All (Random)" : `${selectedCount} selected`}
+        </Badge>
       </div>
 
-      {(isSingleTopicMode(selection) || isMultipleTopicsMode(selection)) && (
-        <div className="space-y-3">
-          {isMultipleTopicsMode(selection) && (
-            <div className="text-sm text-muted-foreground">
-              Select 2-10 topics{" "}
-              <span
-                className={
-                  isMultipleValid ? "text-green-600" : "text-destructive"
-                }
-              >
-                ({selectedCount} selected)
-              </span>
-            </div>
-          )}
+      <div className="relative">
+        <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Input
+          type="text"
+          placeholder="Search topics..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="pl-9"
+        />
+      </div>
 
-          <div className="relative">
-            <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              type="text"
-              placeholder="Search topics..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9"
-            />
+      {isLoading ? (
+        <div className="flex justify-center py-8">
+          <Loader2Icon className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <div className="flex flex-wrap gap-2">
+            <div
+              onClick={() => handleChipClick(null)}
+              className={`cursor-pointer px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
+                selection.mode === "all"
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
+              }`}
+            >
+              All (Random)
+            </div>
           </div>
 
-          {isLoading ? (
-            <div className="flex justify-center py-8">
-              <Loader2Icon className="h-6 w-6 animate-spin text-muted-foreground" />
+          <div className="max-h-[300px] overflow-y-auto border rounded-md p-2">
+            <div className="flex flex-wrap gap-2">
+              {filteredAreas.map((area) => {
+                const selected = isTopicSelected(area.topic);
+                const isWeak = weakTopics.includes(area.topic.toLowerCase());
+                return (
+                  <div
+                    key={`${area.platform}-${area.topic}`}
+                    onClick={() => handleChipClick(area.topic)}
+                    className={`cursor-pointer px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
+                      selected
+                        ? "bg-primary text-primary-foreground border-primary"
+                        : isWeak
+                        ? "bg-orange-50/10 text-orange-600 border-orange-500/50 hover:bg-orange-50/20"
+                        : "bg-background text-foreground border-input hover:bg-accent hover:text-accent-foreground"
+                    }`}
+                  >
+                    {area.topic}
+                  </div>
+                );
+              })}
             </div>
-          ) : (
-            <div className="space-y-2">
-              <div className="max-h-[300px] overflow-y-auto space-y-1 border rounded-md p-2">
-                {paginatedAreas.map((area) => {
-                  const selected = isTopicSelected(area.topic);
+          </div>
 
-                  if (isSingleTopicMode(selection)) {
-                    return (
-                      <button
-                        key={`${area.platform}-${area.topic}`}
-                        onClick={() => handleTopicSelect(area.topic)}
-                        className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
-                          selected
-                            ? "bg-primary text-primary-foreground"
-                            : "hover:bg-accent hover:text-accent-foreground"
-                        }`}
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="font-medium">{area.topic}</span>
-                          <div className="flex items-center gap-2 shrink-0">
-                            {area.user_solved !== undefined && (
-                              <Badge variant="secondary" className="text-xs">
-                                {area.user_solved} solved
-                              </Badge>
-                            )}
-                            <Badge variant="outline" className="text-xs">
-                              {area.problem_count} problems
-                            </Badge>
-                          </div>
-                        </div>
-                      </button>
-                    );
-                  }
-
-                  return (
-                    <div
-                      key={`${area.platform}-${area.topic}`}
-                      className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors ${
-                        selected ? "bg-accent" : "hover:bg-accent/50"
-                      }`}
-                    >
-                      <Checkbox
-                        id={`topic-${area.platform}-${area.topic}`}
-                        checked={selected}
-                        onCheckedChange={() => handleTopicToggle(area.topic)}
-                      />
-                      <label
-                        htmlFor={`topic-${area.platform}-${area.topic}`}
-                        className="flex-1 flex items-center justify-between gap-2 cursor-pointer"
-                      >
-                        <span className="font-medium">{area.topic}</span>
-                        <div className="flex items-center gap-2 shrink-0">
-                          {area.user_solved !== undefined && (
-                            <Badge variant="secondary" className="text-xs">
-                              {area.user_solved} solved
-                            </Badge>
-                          )}
-                          <Badge variant="outline" className="text-xs">
-                            {area.problem_count} problems
-                          </Badge>
-                        </div>
-                      </label>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {hasMore && (
-                <button
-                  onClick={() => setPage((p) => p + 1)}
-                  className="w-full text-sm text-muted-foreground hover:text-foreground py-2"
-                >
-                  Load more...
-                </button>
-              )}
-
-              {filteredAreas.length === 0 && (
-                <p className="text-center text-sm text-muted-foreground py-4">
-                  No topics found
-                </p>
-              )}
-            </div>
+          {filteredAreas.length === 0 && (
+            <p className="text-center text-sm text-muted-foreground py-4">
+              No topics found
+            </p>
           )}
         </div>
       )}

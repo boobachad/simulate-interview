@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 
 interface UseProblemTimerReturn {
   problemTime: number;
@@ -58,7 +58,7 @@ export function useProblemTimer(
     return () => clearInterval(interval);
   }, [startTime]);
 
-  const resetProblemTimer = () => {
+  const resetProblemTimer = useCallback(() => {
     if (!problemId) return;
 
     const key = sessionId
@@ -74,7 +74,7 @@ export function useProblemTimer(
     } catch (error) {
       console.warn("Failed to save problem timer to sessionStorage:", error);
     }
-  };
+  }, [sessionId, problemId]);
 
   return {
     problemTime,

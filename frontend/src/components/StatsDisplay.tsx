@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { apiClient } from "@/lib/api-client";
+import { api } from "@/lib/api";
 import { statsCache } from "@/lib/dexie-db";
-import { toUserID } from "@/types/api";
-import type { CombinedStats } from "@/types/api";
+import { toUserID } from "@/lib/api";
+import type { CombinedStats } from "@/lib/api";
 import {
   Card,
   CardContent,
@@ -27,6 +27,7 @@ export function StatsDisplay({ userId, className }: StatsDisplayProps) {
   const [error, setError] = useState<string | null>(null);
   const [cachedAt, setCachedAt] = useState<string | null>(null);
 
+
   useEffect(() => {
     const controller = new AbortController();
 
@@ -35,7 +36,6 @@ export function StatsDisplay({ userId, className }: StatsDisplayProps) {
         setLoading(true);
         setError(null);
 
-        // Try cache first if userId provided
         if (userId) {
           const cached = await statsCache.get(toUserID(userId));
           if (cached && !controller.signal.aborted) {
@@ -46,15 +46,13 @@ export function StatsDisplay({ userId, className }: StatsDisplayProps) {
           }
         }
 
-        // Fetch from API
-        const data = await apiClient.stats.get();
+        const data = await api.stats.get(controller.signal);
         
         if (controller.signal.aborted) return;
 
         setStats(data);
         setCachedAt(data.cached_at);
 
-        // Cache the result if userId provided
         if (userId) {
           await statsCache.set(toUserID(userId), data);
         }
@@ -123,58 +121,114 @@ export function StatsDisplay({ userId, className }: StatsDisplayProps) {
   const hasLeetCode = stats.leetcode !== null;
   const hasCodeforces = stats.codeforces !== null;
 
+  const leetcodeSkills = stats.leetcode?.skills 
+    ? Object.entries(stats.leetcode.skills).sort((a, b) => b[1].problem_count - a[1].problem_count)
+    : [];
+
+  const codeforcesTagsArray = stats.codeforces?.tags
+    ? Object.entries(stats.codeforces.tags).sort((a, b) => b[1] - a[1])
+    : [];
+
+  // Combine all topics and find weakest 10
+  const allTopics: Array<{ name: string; count: number; platform: string }> = [];
+  
+  if (stats.leetcode?.skills) {
+    Object.entries(stats.leetcode.skills).forEach(([tag, skill]) => {
+      allTopics.push({ name: tag, count: skill.problem_count, platform: 'LeetCode' });
+    });
+  }
+  
+  if (stats.codeforces?.tags) {
+    Object.entries(stats.codeforces.tags).forEach(([tag, count]) => {
+      allTopics.push({ name: tag, count, platform: 'Codeforces' });
+    });
+  }
+  
+  const weakestTopics = allTopics
+    .sort((a, b) => a.count - b.count)
+    .slice(0, 10)
+    .map(t => ({ name: t.name.toLowerCase(), platform: t.platform }));
+
+  const isWeakTopic = (topicName: string, platform: string) => 
+    weakestTopics.some(wt => wt.name === topicName.toLowerCase() && wt.platform === platform);
+
   return (
     <div className={className}>
-      <div className="grid gap-4 md:grid-cols-2">
-        {/* LeetCode Stats */}
+      <div className="grid gap-8 lg:grid-cols-2">
         {hasLeetCode && stats.leetcode ? (
-          <Card>
-            <CardHeader>
-              <div className="flex items-center gap-2">
-                <Code2 className="h-5 w-5 text-primary" />
-                <CardTitle>LeetCode</CardTitle>
+          <Card className="rounded-xl">
+            <CardHeader className="pb-6">
+              <div className="flex items-center gap-3 mb-2">
+                <Code2 className="h-6 w-6 text-primary" />
+                <CardTitle className="text-2xl">LeetCode</CardTitle>
               </div>
-              <CardDescription>@{stats.leetcode.username}</CardDescription>
+              <CardDescription className="text-base">@{stats.leetcode.username}</CardDescription>
             </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div>
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-3xl font-bold">
-                      {stats.leetcode.total_solved}
-                    </span>
-                    <span className="text-sm text-muted-foreground">
-                      problems solved
-                    </span>
-                  </div>
+            <CardContent className="space-y-8">
+              <div>
+                <div className="flex items-baseline gap-3 mb-4">
+                  <span className="text-5xl font-bold">
+                    {stats.leetcode.total_solved}
+                  </span>
+                  <span className="text-lg text-muted-foreground">
+                    problems solved
+                  </span>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  <Badge variant="outline" className="text-green-600">
+                <div className="flex flex-wrap gap-3">
+                  <Badge variant="outline" className="text-base px-4 py-2 text-green-600 border-green-600/30">
                     Easy: {stats.leetcode.easy_solved}
                   </Badge>
-                  <Badge variant="outline" className="text-yellow-600">
+                  <Badge variant="outline" className="text-base px-4 py-2 text-yellow-600 border-yellow-600/30">
                     Medium: {stats.leetcode.medium_solved}
                   </Badge>
-                  <Badge variant="outline" className="text-red-600">
+                  <Badge variant="outline" className="text-base px-4 py-2 text-red-600 border-red-600/30">
                     Hard: {stats.leetcode.hard_solved}
                   </Badge>
                 </div>
               </div>
+
+              {leetcodeSkills.length > 0 && (
+                <div className="space-y-4">
+                  <div className="text-base font-semibold">
+                    Skills by Topic
+                  </div>
+                  <div className="max-h-[600px] overflow-y-auto pr-2">
+                    <div className="flex flex-wrap gap-2">
+                      {leetcodeSkills.map(([tag, skill]) => (
+                        <Badge
+                          key={tag}
+                          variant="outline"
+                          className={`px-4 py-2 text-sm font-medium ${
+                            isWeakTopic(tag, 'LeetCode')
+                              ? 'border-orange-500/50 bg-orange-50/10 text-orange-600'
+                              : ''
+                          }`}
+                        >
+                          {tag} ×{skill.problem_count}
+                          <span className="ml-2 text-xs opacity-70">
+                            {skill.level}
+                          </span>
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         ) : (
-          <Card className="border-dashed">
-            <CardHeader>
-              <div className="flex items-center gap-2">
-                <Code2 className="h-5 w-5 text-muted-foreground" />
-                <CardTitle className="text-muted-foreground">
+          <Card className="border-dashed rounded-xl">
+            <CardHeader className="pb-6">
+              <div className="flex items-center gap-3 mb-2">
+                <Code2 className="h-6 w-6 text-muted-foreground" />
+                <CardTitle className="text-2xl text-muted-foreground">
                   LeetCode
                 </CardTitle>
               </div>
-              <CardDescription>No data available</CardDescription>
+              <CardDescription className="text-base">No data available</CardDescription>
             </CardHeader>
             <CardContent>
-              <p className="text-sm text-muted-foreground">
+              <p className="text-base text-muted-foreground">
                 LeetCode statistics could not be fetched. Check your username
                 in settings.
               </p>
@@ -182,55 +236,77 @@ export function StatsDisplay({ userId, className }: StatsDisplayProps) {
           </Card>
         )}
 
-        {/* Codeforces Stats */}
         {hasCodeforces && stats.codeforces ? (
-          <Card>
-            <CardHeader>
-              <div className="flex items-center gap-2">
-                <Award className="h-5 w-5 text-primary" />
-                <CardTitle>Codeforces</CardTitle>
+          <Card className="rounded-xl">
+            <CardHeader className="pb-6">
+              <div className="flex items-center gap-3 mb-2">
+                <Award className="h-6 w-6 text-primary" />
+                <CardTitle className="text-2xl">Codeforces</CardTitle>
               </div>
-              <CardDescription>@{stats.codeforces.username}</CardDescription>
+              <CardDescription className="text-base">@{stats.codeforces.username}</CardDescription>
             </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div className="flex items-center gap-4">
+            <CardContent className="space-y-8">
+              <div>
+                <div className="flex items-center gap-6 mb-4">
                   <div>
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-3xl font-bold">
+                    <div className="flex items-baseline gap-3">
+                      <span className="text-5xl font-bold">
                         {stats.codeforces.rating}
                       </span>
-                      <span className="text-sm text-muted-foreground">
+                      <span className="text-lg text-muted-foreground">
                         rating
                       </span>
                     </div>
                   </div>
-                  <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                    <TrendingUp className="h-4 w-4" />
+                  <div className="flex items-center gap-2 text-base text-muted-foreground">
+                    <TrendingUp className="h-5 w-5" />
                     <span>Max: {stats.codeforces.max_rating}</span>
                   </div>
                 </div>
-                <div>
-                  <Badge variant="outline">
-                    {stats.codeforces.problems_solved} problems solved
-                  </Badge>
-                </div>
+                <Badge variant="outline" className="text-base px-4 py-2">
+                  {stats.codeforces.problems_solved} problems solved
+                </Badge>
               </div>
+
+              {codeforcesTagsArray.length > 0 && (
+                <div className="space-y-4">
+                  <div className="text-base font-semibold">
+                    Problem Tags
+                  </div>
+                  <div className="max-h-[600px] overflow-y-auto pr-2">
+                    <div className="flex flex-wrap gap-2">
+                      {codeforcesTagsArray.map(([tag, count]) => (
+                        <Badge
+                          key={tag}
+                          variant="outline"
+                          className={`px-4 py-2 text-sm font-medium ${
+                            isWeakTopic(tag, 'Codeforces')
+                              ? 'border-orange-500/50 bg-orange-50/10 text-orange-600'
+                              : ''
+                          }`}
+                        >
+                          {tag} ×{count}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         ) : (
-          <Card className="border-dashed">
-            <CardHeader>
-              <div className="flex items-center gap-2">
-                <Award className="h-5 w-5 text-muted-foreground" />
-                <CardTitle className="text-muted-foreground">
+          <Card className="border-dashed rounded-xl">
+            <CardHeader className="pb-6">
+              <div className="flex items-center gap-3 mb-2">
+                <Award className="h-6 w-6 text-muted-foreground" />
+                <CardTitle className="text-2xl text-muted-foreground">
                   Codeforces
                 </CardTitle>
               </div>
-              <CardDescription>No data available</CardDescription>
+              <CardDescription className="text-base">No data available</CardDescription>
             </CardHeader>
             <CardContent>
-              <p className="text-sm text-muted-foreground">
+              <p className="text-base text-muted-foreground">
                 Codeforces statistics could not be fetched. Check your username
                 in settings.
               </p>
@@ -239,9 +315,8 @@ export function StatsDisplay({ userId, className }: StatsDisplayProps) {
         )}
       </div>
 
-      {/* Cache timestamp */}
       {cachedAt && (
-        <p className="mt-2 text-xs text-muted-foreground text-center">
+        <p className="mt-6 text-sm text-muted-foreground text-center">
           Last updated: {new Date(cachedAt).toLocaleString()}
         </p>
       )}
