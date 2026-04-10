@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import { toast } from "sonner";
 
-const BASE_URL = "http://api.simulate-interview.localhost:1355";
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 
 interface HealthStatus {
     apiStatus: "online" | "offline";

@@ -77,8 +77,8 @@ func main() {
 	corsConfig := cors.DefaultConfig()
 	corsConfig.AllowOrigins = []string{
 		"http://localhost:3000",
-		"http://simulate-interview.localhost:1355",
-		"http://api.simulate-interview.localhost:1355",
+		"https://simulate-interview.localhost",
+		"https://api.simulate-interview.localhost",
 	}
 	corsConfig.AllowMethods = []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}
 	corsConfig.AllowHeaders = []string{"Origin", "Content-Length", "Content-Type", "Authorization"}

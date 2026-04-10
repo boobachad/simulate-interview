@@ -49,6 +49,7 @@
     "typescript": "5.9.3"
   },
   "trustedDependencies": [
+    "sharp",
     "unrs-resolver"
   ]
 }
